@@ -39,15 +39,32 @@ export function step(p: Runner, input: Inputs, dt: number, time: number): GameEv
   const acceleration = (p.grounded ? 2300 : 1700) * dt;
   p.vx += Math.max(-acceleration, Math.min(acceleration, target - p.vx));
   if (direction) p.facing = direction;
-  const oldY = p.y;
+  const oldX = p.x, oldY = p.y;
   p.vy = Math.min(900, p.vy + 1700 * dt);
   p.x = Math.max(8, Math.min(WIDTH - PLAYER_W - 8, p.x + p.vx * dt)); p.y += p.vy * dt; p.grounded = false;
-  for (const platform of getPlatforms(p.levelId)) {
-    if (platform.fragile && p.fragile[platform.id] !== undefined && time - p.fragile[platform.id] > .24) continue;
-    if (p.x + PLAYER_W > platform.x && p.x < platform.x + platform.w && p.vy >= 0 && oldY + PLAYER_H <= platform.y + 1 && p.y + PLAYER_H >= platform.y) {
-      p.y = platform.y - PLAYER_H; p.vy = 0; p.grounded = true;
-      if (platform.fragile && p.fragile[platform.id] === undefined) p.fragile[platform.id] = time;
+  const platforms = getPlatforms(p.levelId).filter(platform => !(platform.fragile && p.fragile[platform.id] !== undefined && time - p.fragile[platform.id] > .24));
+  // Solid sides keep the runner from sliding into platform bodies. Passing up
+  // through a platform is still allowed, as in a classic one-way platformer.
+  for (const platform of platforms) {
+    const verticalOverlap = p.y + PLAYER_H > platform.y + 2 && p.y < platform.y + platform.h - 2;
+    if (!verticalOverlap) continue;
+    if (p.vx > 0 && oldX + PLAYER_W <= platform.x + 1 && p.x + PLAYER_W > platform.x) {
+      p.x = platform.x - PLAYER_W; p.vx = 0;
+    } else if (p.vx < 0 && oldX >= platform.x + platform.w - 1 && p.x < platform.x + platform.w) {
+      p.x = platform.x + platform.w; p.vx = 0;
     }
+  }
+  // Select the first surface crossed during this tick. Sorting prevents a
+  // lower overlapping platform from winning just because it appeared first.
+  const landing = platforms.filter(platform => {
+    if (p.vy < 0 || oldY + PLAYER_H > platform.y + 1 || p.y + PLAYER_H < platform.y) return false;
+    const dy = p.y - oldY, t = dy > 0 ? (platform.y - (oldY + PLAYER_H)) / dy : 0;
+    const xAtLanding = oldX + (p.x - oldX) * Math.max(0, Math.min(1, t));
+    return xAtLanding + PLAYER_W > platform.x && xAtLanding < platform.x + platform.w;
+  }).sort((a, b) => a.y - b.y)[0];
+  if (landing) {
+    p.y = landing.y - PLAYER_H; p.vy = 0; p.grounded = true;
+    if (landing.fragile && p.fragile[landing.id] === undefined) p.fragile[landing.id] = time;
   }
   if (time > p.invincibleUntil) {
     const hitbox = { x: p.x + 4, y: p.y + 4, w: PLAYER_W - 8, h: PLAYER_H - 5 };

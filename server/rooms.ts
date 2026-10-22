@@ -10,9 +10,9 @@ function randomCode() { const a = crypto.getRandomValues(new Uint8Array(6)); ret
 async function hash(s: string) { return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))), b => b.toString(16).padStart(2, "0")).join(""); }
 function nameOf(value: unknown) { const s = typeof value === "string" ? value.replace(/[\p{C}<>]/gu, "").trim().slice(0, 18) : ""; return s || "Player"; }
 function player(slot: number, name: string, tokenHash: string, now: number): PrivatePlayer {
-  return { slot, name, tokenHash, ready: false, x: 60, y: FLOOR - PLAYER_H, vx: 0, vy: 0, checkpoint: 0, deaths: 0, finishedAt: null, seq: -1, lastSeen: now, departed: false, dead: false, maxX: 60 };
+  return { slot, name, tokenHash, ready: false, x: 60, y: FLOOR - PLAYER_H, vx: 0, vy: 0, checkpoint: 0, deaths: 0, finishedAt: null, seq: -1, lastSeen: now, stateAt: now, departed: false, dead: false, maxX: 60 };
 }
-function publicRoom(s: StoredRoom, now: number): Room { return { code: s.code, round: s.round, phase: s.phase, startAt: s.startAt, levelId: s.levelId, serverNow: now, players: s.players.map(({ tokenHash: _, ...p }) => p) }; }
+function publicRoom(s: StoredRoom, now: number): Room { return { code: s.code, round: s.round, phase: s.phase, startAt: s.startAt, levelId: s.levelId, serverNow: now, players: s.players.map(({ tokenHash: _, ...p }) => ({ ...p, stateAt: p.stateAt ?? p.lastSeen })) }; }
 function numeric(x: unknown, min: number, max: number) { return typeof x === "number" && Number.isFinite(x) && x >= min && x <= max; }
 async function mutate(db: DB, code: string, now: number, fn: (s: StoredRoom) => void) {
   for (let retry = 0; retry < 10; retry++) {
@@ -82,13 +82,17 @@ export async function handleAction(db: DB, input: Record<string, unknown>, now =
     } else if (action === "sync") {
       const u = input.state as Record<string, unknown> | undefined;
       if (u && s.phase === "racing" && input.round === s.round && now >= s.startAt && !p.finishedAt && numeric(u.seq, 0, 1e10) && (u.seq as number) > p.seq) {
-        if (!numeric(u.x, 0, WIDTH) || !numeric(u.y, -300, 700) || !numeric(u.vx, -300, 300) || !numeric(u.vy, -700, 950) || !numeric(u.checkpoint, 0, CHECKPOINTS.length - 1) || !numeric(u.deaths, p.deaths, 100000)) throw new GameError("Invalid player update.");
+        const sampleAt = u.at === undefined ? now : u.at;
+        if (!numeric(u.x, 0, WIDTH) || !numeric(u.y, -300, 700) || !numeric(u.vx, -300, 300) || !numeric(u.vy, -700, 950) || !numeric(u.checkpoint, 0, CHECKPOINTS.length - 1) || !numeric(u.deaths, p.deaths, 100000) || !numeric(sampleAt, now - 1500, now + 250)) throw new GameError("Invalid player update.");
         const cp = u.checkpoint as number;
         if (!Number.isInteger(cp) || cp < p.checkpoint || cp > p.checkpoint + 1) throw new GameError("Checkpoint mismatch. Reconnect to the room.", 409);
         if (cp > p.checkpoint && (u.x as number) < CHECKPOINTS[cp]) throw new GameError("Checkpoint has not been reached.");
         const allowance = Math.max(280, (now - previousSeen + 1000) * .32);
         if ((u.x as number) > p.x + allowance && (u.deaths as number) === p.deaths) throw new GameError("Movement update was out of range. Reconnect to the room.", 409);
         p.x = u.x as number; p.y = u.y as number; p.vx = u.vx as number; p.vy = u.vy as number;
+        // Keep the simulation sample time separate from request arrival time so
+        // peers can compensate for upload latency instead of rendering behind.
+        p.stateAt = Math.max(now - 350, Math.min(now, sampleAt as number));
         p.checkpoint = cp; p.deaths = Math.floor(u.deaths as number); p.seq = u.seq as number; p.dead = u.dead === true; p.maxX = Math.max(p.maxX, p.x);
         if (u.finished === true && p.checkpoint === CHECKPOINTS.length - 1 && p.x >= FINISH && p.y <= FLOOR - PLAYER_H + 2 && now - s.startAt > FINISH / 300 * 1000) p.finishedAt = Math.max(now, ...s.players.map(q => (q.finishedAt ?? 0) + 1));
       }

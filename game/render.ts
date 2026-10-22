@@ -77,13 +77,15 @@ export function render(canvas: HTMLCanvasElement, opts: RenderOptions) {
     const broken = pl.fragile && p.fragile[pl.id] !== undefined && time - p.fragile[pl.id] > .24;
     if (broken) { c.globalAlpha = .15; round(c, pl.x, pl.y + 20, pl.w, 6, 0, "#b5ba7b"); c.globalAlpha = 1; continue; }
     const shake = pl.fragile && p.fragile[pl.id] !== undefined && !reduced ? Math.sin(time * 60) * 2 : 0;
-    round(c, pl.x, pl.y + shake, pl.w, pl.h, 2, pl.fragile ? "#555a3d" : "#303d32");
-    c.fillStyle = pl.fragile ? "#c0be76" : palette.floor; c.fillRect(pl.x, pl.y + shake, pl.w, 5);
+    const lowerRoute = pl.id.startsWith("d");
+    round(c, pl.x, pl.y + shake, pl.w, pl.h, 2, lowerRoute ? "#111c2d" : pl.fragile ? "#555a3d" : "#303d32");
+    c.fillStyle = pl.fragile ? "#c0be76" : lowerRoute ? palette.glow : palette.floor; c.fillRect(pl.x, pl.y + shake, pl.w, 5);
     c.fillStyle = "#15231d"; c.fillRect(pl.x + 6, pl.y + 13, pl.w - 12, 3);
     c.strokeStyle = "#49563d"; c.lineWidth = 1;
     for (let xx = pl.x + 24; xx < pl.x + pl.w; xx += 48) { c.beginPath(); c.moveTo(xx, pl.y + 18); c.lineTo(xx, pl.y + pl.h); c.stroke(); }
     if (pl.fragile) { c.strokeStyle = "#161b13"; c.lineWidth = 2; c.beginPath(); c.moveTo(pl.x + 33, pl.y); c.lineTo(pl.x + 47, pl.y + 10); c.lineTo(pl.x + 39, pl.y + 19); c.stroke(); }
     else { c.strokeStyle = "#49563d"; c.beginPath(); c.moveTo(pl.x, 488); c.lineTo(pl.x + pl.w, 488); c.stroke(); }
+    if (lowerRoute) { c.fillStyle = palette.glow + "22"; c.fillRect(pl.x + 4, pl.y + 6, pl.w - 8, 2); text(c, "DROP ROUTE", pl.x + pl.w / 2, pl.y + 34, 8, palette.glow, "monospace", "center"); }
   }
   for (const trap of getTraps(p.levelId)) {
     if (trap.x + trap.w < camera - 80 || trap.x > camera + vw + 80) continue;

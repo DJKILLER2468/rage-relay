@@ -28,8 +28,10 @@ for (let i = 0; i < 20; i++) {
   if ([2, 5].includes(i)) platforms.push({ id: `${i}f`, x: x + 620, y: FLOOR, w: 120, h: 22, fragile: true });
 }
 export function getPlatforms(levelId = 0): Platform[] {
+  const isDropSector = (sector: number) => sector > 0 && sector < 19 && (sector + levelId) % 7 === 3;
   const base = platforms.map((platform) => {
     const sector = Math.floor(platform.x / 800);
+    if (platform.id.endsWith("a") && isDropSector(sector)) return { ...platform, w: 210 };
     if (levelId >= 1 && platform.id.endsWith("b") && (sector + levelId) % 3 !== 0 && sector < 19) return { ...platform, y: FLOOR - (levelId > 5 ? 68 : 58) };
     if (levelId >= 2 && platform.id.endsWith("c") && (sector + levelId) % 4 === 1 && sector < 8) return { ...platform, fragile: true, h: 20 };
     if (levelId >= 4 && platform.id.endsWith("f") && (sector + levelId) % 2 === 0) return { ...platform, fragile: true };
@@ -38,12 +40,16 @@ export function getPlatforms(levelId = 0): Platform[] {
   // Optional two-level catwalks. The ground path stays open while the raised
   // route rewards clean jumps and gives players a genuine multi-floor view.
   const upper: Platform[] = [];
+  const lower: Platform[] = [];
   for (let sector = 0; sector < 20; sector++) {
     const x = sector * 800;
+    if (isDropSector(sector)) lower.push({ id: `d${sector}`, x: x + 220, y: FLOOR + 52, w: 160, h: 108 });
+    // Keep the drop shaft visually and physically open to the basement path.
+    if (isDropSector(sector)) continue;
     if ((sector + levelId) % 2 === 0) upper.push({ id: `u${sector}a`, x: x + 215, y: FLOOR - 86, w: 150, h: 18 });
     if ((sector + levelId) % 3 !== 1) upper.push({ id: `u${sector}b`, x: x + 505, y: FLOOR - 142, w: 145, h: 18, fragile: levelId >= 6 && sector % 2 === 0 });
   }
-  return [...base, ...upper];
+  return [...base, ...lower, ...upper];
 }
 export const traps: Trap[] = [
   { id: "s0", kind: "spikes", x: 505, w: 42, phase: 0 },

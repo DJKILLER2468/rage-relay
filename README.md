@@ -14,8 +14,8 @@ A finish records a player’s result, but does not end the session. After the fi
 - Canvas graphics drawn in code; no third-party game art.
 - Fixed 120 Hz local physics with coyote time and jump buffering.
 - D1 room snapshots, optimistic concurrency control with bounded jittered retries, per-player secret tokens stored only as hashes server-side, round identifiers, and ordered update sequences.
-- HTTP state exchange about every 115 ms plus request time. Remote runners are extrapolated briefly from their last velocity and smoothed; the UI reports measured round-trip time. This remains casual multiplayer, not a WebSocket transport or tournament-grade, server-simulated competition. Local movement is immediate; latency and client-side physics can affect finish ordering.
-- Ten escalating maps each span twenty sectors and combine optional raised catwalks, ground routes, hazards, timing shifts, and ten map-specific color palettes. Room capacity is capped at four players to bound D1 contention.
+- HTTP state exchange targets a 115 ms request-start cadence, without adding another delay after each response. Each movement sample carries an estimated server timestamp; remote runners are projected from the simulation sample rather than request arrival. The UI reports round-trip time. This remains casual multiplayer, not a WebSocket transport or tournament-grade, server-simulated competition. Local movement is immediate; latency and client-side physics can affect finish ordering.
+- Ten escalating maps each span twenty sectors and combine raised catwalks, lower drop routes, hazards, timing shifts, and ten map-specific color palettes. Room capacity is capped at four players to bound D1 contention.
 - Local simulation pauses after a 2.5-second network interruption. Rooms expire after four hours of inactivity.
 - `sessionStorage` preserves the player session for same-tab refresh. Invite links contain only the room code.
 
@@ -33,7 +33,7 @@ A finish records a player’s result, but does not end the session. After the fi
 
 `node tests/check.mjs` transpiles source into ignored temporary test modules and runs movement, jump range, traps, checkpoints, session isolation, four-player capacity, course selection, concurrent join, ordered update, reconnect, finish, campaign advancement, and reset checks against SQLite.
 
-`node tests/course-run.mjs` follows it with a deterministic physics search through the entire course, using the actual movement and collision code with active traps. This verifies reachability, not human difficulty or campaign speedrun duration. Across the ten maps, the no-death physics planner finishes in about 10:33, including each map start countdown. That is a route-search estimate, not a human speedrun benchmark.
+`node tests/course-run.mjs` follows it with a deterministic physics search through the entire campaign, using the actual movement and collision code with active traps. Pass comma-separated map indexes to check a subset, for example `node tests/course-run.mjs 0,9`. This verifies reachability, not human difficulty or campaign speedrun duration. Across the ten maps, the no-death physics planner finishes in about 10:33, including each map start countdown. That is a route-search estimate, not a human speedrun benchmark.
 
 `node node_modules/typescript/bin/tsc --noEmit` checks types.
 

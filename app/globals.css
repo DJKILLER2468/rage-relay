@@ -21,3 +21,14 @@
 @media(max-width:560px){.campaign-strip{grid-template-columns:1fr}.home-screen .preview-frame:before{display:none}}
 @media(prefers-reduced-motion:reduce){.home-screen .preview-frame{animation:none;transform:none}}
 .home-screen .preview-frame{overflow:visible}.home-screen .preview-canvas{border-radius:5px}
+:root{--sans:"Avenir Next","Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif}
+.home-screen{--sans:"Avenir Next","Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif}
+.home-screen .hero-copy h1{font-family:"Segoe UI Variable","Avenir Next",system-ui,sans-serif;font-weight:950;letter-spacing:-.065em;line-height:.86}
+.home-screen .hero-copy h1>span:first-of-type{font-style:normal;-webkit-text-stroke:1px #ffaaa1;filter:drop-shadow(0 0 24px #ff574d55)}
+.home-screen .entry-panel{padding:22px;border-radius:16px;backdrop-filter:blur(14px)}
+.home-screen .primary{border:1px solid #ffb3a8;border-radius:9px;letter-spacing:.015em}
+.home-screen .entry-tabs button{border-radius:8px 8px 0 0}
+.home-screen .brand{letter-spacing:-.045em}
+.home-screen .hero-art:after{content:"";position:absolute;z-index:0;inset:7% 2% 19% 9%;border:1px solid #42dfff27;border-radius:45%;transform:rotate(-11deg);box-shadow:0 0 80px #2784ff17,inset 0 0 90px #2dd4ff0a;pointer-events:none}
+.home-screen .hero-tags{z-index:1}
+@media(max-width:900px){.home-screen .hero-art:after{display:none}}

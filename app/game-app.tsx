@@ -82,7 +82,7 @@ export default function GameApp() {
     const poll = async () => {
       const s = sessionRef.current; if (!s || cancelled || leaving.current) return;
       const r = roomRef.current, p = runner.current, start = Date.now(); let retrySoon = false;
-      const state = !restore && r?.phase === "racing" ? { x: p.x, y: p.y, vx: p.vx, vy: p.vy, checkpoint: p.checkpoint, deaths: p.deaths, dead: !!p.deadUntil, finished: p.finished, seq: seq.current++ } : undefined;
+      const state = !restore && r?.phase === "racing" ? { x: p.x, y: p.y, vx: p.vx, vy: p.vy, checkpoint: p.checkpoint, deaths: p.deaths, dead: !!p.deadUntil, finished: p.finished, at: start + clockOffset.current, seq: seq.current++ } : undefined;
       try {
         const res = await request({ action: "sync", code: s.code, token: s.token, round: r?.round, state });
         if (cancelled || leaving.current) return;
@@ -102,7 +102,10 @@ export default function GameApp() {
           else retrySoon = true;
         }
       }
-      if (!cancelled) timer = setTimeout(poll, retrySoon ? 35 + Math.random() * 35 : !document.hidden && roomRef.current?.phase === "racing" ? 115 : 650);
+      if (!cancelled) {
+        const cadence = !document.hidden && roomRef.current?.phase === "racing" ? 115 : 650;
+        timer = setTimeout(poll, retrySoon ? 35 + Math.random() * 35 : Math.max(0, cadence - (Date.now() - start)));
+      }
     }; void poll(); return () => { cancelled = true; clearTimeout(timer); };
   }, [session?.token, acceptRoom]);
 
@@ -137,11 +140,11 @@ export default function GameApp() {
         }
       } else accumulator = 0;
       const peers = (r?.players || []).filter(q => q.slot !== s?.slot && !q.departed).map(targetPeer => {
-        const age = Math.min(.22, Math.max(0, (Date.now() + clockOffset.current - targetPeer.lastSeen) / 1000));
+        const age = Math.min(.32, Math.max(0, (Date.now() + clockOffset.current - targetPeer.stateAt) / 1000));
         const target = { ...targetPeer, x: Math.max(8, Math.min(WIDTH - PLAYER_H, targetPeer.x + targetPeer.vx * age)), y: Math.max(-100, Math.min(480, targetPeer.y + targetPeer.vy * age + 850 * age * age)) };
         const old = peerVisual.get(targetPeer.slot);
         if (!old || Math.abs(old.x - target.x) > 240) peerVisual.set(targetPeer.slot, target);
-        else { const amount = Math.min(1, dt * 22); peerVisual.set(targetPeer.slot, { ...target, x: old.x + (target.x - old.x) * amount, y: old.y + (target.y - old.y) * amount }); }
+        else { const amount = Math.min(1, dt * 38); peerVisual.set(targetPeer.slot, { ...target, x: old.x + (target.x - old.x) * amount, y: old.y + (target.y - old.y) * amount }); }
         return peerVisual.get(targetPeer.slot)!;
       });
       for (const slot of peerVisual.keys()) if (!peers.some(peer => peer.slot === slot)) peerVisual.delete(slot);

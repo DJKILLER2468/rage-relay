@@ -8,8 +8,8 @@ This is a practical risk review of the current four-player web game. “Fixed”
 |---|---|---|
 | Room capacity | A third player was rejected because the server and UI assumed exactly two participants. | Up to four stable slots, with an explicit full-room error. |
 | Concurrent room writes | Simultaneous syncs could lose an optimistic D1 update or return a conflict. | Bounded jittered compare-and-swap retries; clients retry a busy-room response without rolling back their locally simulated runner. |
-| Remote movement | The rival appeared to pause between HTTP snapshots. | Short bounded position prediction using the latest velocity, then smoothing; visible round-trip time helps distinguish a laggy network from a rendering stall. |
-| Content variety | “Three stages” were sections of a single map. | Three selectable course variants with different platform heights, hazards, timing, and scene palettes. The host's choice is stored in room state. |
+| Remote movement | Peers appeared to trail because updates waited after the previous HTTP request and used server arrival time as the movement sample. | Keep a 115 ms request-start cadence, timestamp movement samples against the estimated server clock, extrapolate from the sample, and smooth corrections. This reduces avoidable delay; actual RTT and D1 contention still affect play. |
+| Content variety | “Three stages” were sections of a single map. | Ten campaign maps with separate trap layouts, platform heights, lower drop routes, and scene palettes. The host's starting map is stored in room state. |
 | Race readiness | The start condition only handled a two-player room. | Every joined player must ready; the race starts when at least two and at most four are present and ready. |
 | Player identity | The design only had two characters and colors. | Four distinct character silhouettes and colors; movement and hitboxes stay identical. |
 
@@ -17,7 +17,7 @@ This is a practical risk review of the current four-player web game. “Fixed”
 
 | Priority | Area | Risk | Current state / next engineering step |
 |---|---|---|---|
-| High | Latency and server load | Each active player still makes an HTTP request that reads and writes the whole room in D1 roughly every 115 ms. Four players increase write contention. | Cloudflare Workers run at the edge, but D1 is the authoritative shared store. A Durable Object/WebSocket room coordinator would remove most per-frame D1 writes and push snapshots immediately. The current Sites project contract only declares D1/R2 bindings; DO support is not configured or verified. |
+| High | Latency and server load | Each active player still makes an HTTP request that reads and writes the whole room in D1 on a 115 ms request-start cadence. Four players increase write contention; mobile timer suspension and distant regions add delay. | The sample timestamp and no-extra-wait cadence reduce client-side lag, but they do not remove D1 contention. A Durable Object/WebSocket room coordinator could push snapshots and avoid most per-frame D1 writes. DO support is not configured in this Sites project and would need a separately verified hosting change. |
 | High | Competitive fairness | Movement physics run in each browser. The server checks update ordering, bounds, checkpoint progression, and finish timing, but it does not replay every jump/collision. A modified client could still submit plausible cheating movement. | Acceptable only for casual friend races. A server-authoritative simulation is required for ranked play or prizes. |
 | High | Public abuse | Room creation and join attempts have no per-IP or per-token rate limit. A public service can be spammed, rooms can be filled, or room-code guesses can consume work. | Add rate limits, abuse telemetry, and a short ban/backoff policy at the edge before broad promotion. Do not put a third-party anti-bot challenge in the fast reconnect path. |
 | Medium | Real-device verification | A successful local test cannot prove two phones on different networks stay synchronized under packet loss or high latency. | Test two to four independent devices, Wi-Fi plus mobile data, background/resume, and network loss. Record measured RTT and failed sync counts. |
@@ -34,7 +34,7 @@ This is a practical risk review of the current four-player web game. “Fixed”
 
 ## Minimum release gate
 
-1. Run unit and full-course simulation checks for all three courses.
+1. Run unit and full-course simulation checks across all ten maps.
 2. Build and type-check the production app.
 3. Join the same room from at least two independent clients; verify movement, selected course, readiness, finish ordering, reconnect, rematch, and room isolation.
 4. Repeat over separate networks with throttled latency and packet loss.
