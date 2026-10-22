@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, ArrowLeft, ArrowUp, Copy, Check, Volume2, VolumeX, X, RotateCcw, Flag, Skull, Users, HelpCircle, LogOut, Trophy, Link as LinkIcon, Maximize2, Zap } from "lucide-react";
 import { makeRunner, step, emptyInput, type Runner, type Inputs } from "../game/engine";
-import { CHAPTERS, CHECKPOINTS, FINISH, FLOOR, LEVELS, PLAYER_H } from "../game/course";
+import { CHAPTERS, CHECKPOINTS, FINISH, FLOOR, LEVELS, PLAYER_H, WIDTH } from "../game/course";
 import { render, COLORS } from "../game/render";
 import { Sound } from "../game/sound";
 import type { Player, Room, Session } from "../game/protocol";
@@ -138,7 +138,7 @@ export default function GameApp() {
       } else accumulator = 0;
       const peers = (r?.players || []).filter(q => q.slot !== s?.slot && !q.departed).map(targetPeer => {
         const age = Math.min(.22, Math.max(0, (Date.now() + clockOffset.current - targetPeer.lastSeen) / 1000));
-        const target = { ...targetPeer, x: Math.max(8, Math.min(7270, targetPeer.x + targetPeer.vx * age)), y: Math.max(-100, Math.min(480, targetPeer.y + targetPeer.vy * age + 850 * age * age)) };
+        const target = { ...targetPeer, x: Math.max(8, Math.min(WIDTH - PLAYER_H, targetPeer.x + targetPeer.vx * age)), y: Math.max(-100, Math.min(480, targetPeer.y + targetPeer.vy * age + 850 * age * age)) };
         const old = peerVisual.get(targetPeer.slot);
         if (!old || Math.abs(old.x - target.x) > 240) peerVisual.set(targetPeer.slot, target);
         else { const amount = Math.min(1, dt * 22); peerVisual.set(targetPeer.slot, { ...target, x: old.x + (target.x - old.x) * amount, y: old.y + (target.y - old.y) * amount }); }

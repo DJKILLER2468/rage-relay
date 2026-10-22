@@ -1,8 +1,8 @@
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Platform = Rect & { id: string; fragile?: boolean };
 export type Trap = { id: string; kind: "spikes" | "pop" | "saw" | "press"; x: number; w: number; phase: number };
-export const WIDTH = 7300, FLOOR = 440, FINISH = 7160, PLAYER_W = 26, PLAYER_H = 34;
-export const CHECKPOINTS = [60, 1660, 3260, 4860, 6460];
+export const WIDTH = 16300, FLOOR = 440, FINISH = 15760, PLAYER_W = 26, PLAYER_H = 34;
+export const CHECKPOINTS = [60, 3660, 7260, 10860, 14660];
 export const LEVELS = [
   { id: 0, name: "Scrapline City", subtitle: "Learn the rhythm. The rooftops are optional.", palette: "factory" },
   { id: 1, name: "Neon Freight", subtitle: "Moving steel, high routes, tighter jumps.", palette: "arcade" },
@@ -21,16 +21,16 @@ export const CHAPTERS = [
   { name: "Last nerve", subtitle: "You have come too far to quit.", color: "#ff8858", start: 4800 },
 ];
 export const platforms: Platform[] = [];
-for (let i = 0; i < 9; i++) {
+for (let i = 0; i < 20; i++) {
   const x = i * 800;
-  platforms.push({ id: `${i}a`, x, y: FLOOR, w: 270, h: 160 }, { id: `${i}b`, x: x + 380, y: FLOOR, w: 240, h: 160 }, { id: `${i}c`, x: x + 740, y: FLOOR, w: i === 8 ? 160 : 60, h: 160 });
+  platforms.push({ id: `${i}a`, x, y: FLOOR, w: 270, h: 160 }, { id: `${i}b`, x: x + 380, y: FLOOR, w: 240, h: 160 }, { id: `${i}c`, x: x + 740, y: FLOOR, w: i === 8 || i === 19 ? 160 : 60, h: 160 });
   if ([1, 4, 7].includes(i)) platforms.push({ id: `${i}f`, x: x + 270, y: FLOOR, w: 110, h: 22, fragile: true });
   if ([2, 5].includes(i)) platforms.push({ id: `${i}f`, x: x + 620, y: FLOOR, w: 120, h: 22, fragile: true });
 }
 export function getPlatforms(levelId = 0): Platform[] {
   const base = platforms.map((platform) => {
     const sector = Math.floor(platform.x / 800);
-    if (levelId >= 1 && platform.id.endsWith("b") && (sector + levelId) % 3 !== 0 && sector < 8) return { ...platform, y: FLOOR - (levelId > 5 ? 68 : 58) };
+    if (levelId >= 1 && platform.id.endsWith("b") && (sector + levelId) % 3 !== 0 && sector < 19) return { ...platform, y: FLOOR - (levelId > 5 ? 68 : 58) };
     if (levelId >= 2 && platform.id.endsWith("c") && (sector + levelId) % 4 === 1 && sector < 8) return { ...platform, fragile: true, h: 20 };
     if (levelId >= 4 && platform.id.endsWith("f") && (sector + levelId) % 2 === 0) return { ...platform, fragile: true };
     return platform;
@@ -38,7 +38,7 @@ export function getPlatforms(levelId = 0): Platform[] {
   // Optional two-level catwalks. The ground path stays open while the raised
   // route rewards clean jumps and gives players a genuine multi-floor view.
   const upper: Platform[] = [];
-  for (let sector = 0; sector < 9; sector++) {
+  for (let sector = 0; sector < 20; sector++) {
     const x = sector * 800;
     if ((sector + levelId) % 2 === 0) upper.push({ id: `u${sector}a`, x: x + 215, y: FLOOR - 86, w: 150, h: 18 });
     if ((sector + levelId) % 3 !== 1) upper.push({ id: `u${sector}b`, x: x + 505, y: FLOOR - 142, w: 145, h: 18, fragile: levelId >= 6 && sector % 2 === 0 });
@@ -62,9 +62,13 @@ export const traps: Trap[] = [
   { id: "s13", kind: "pop", x: 6585, w: 55, phase: .3 },
   { id: "s14", kind: "press", x: 6850, w: 64, phase: .8 },
 ];
+const campaignTraps: Trap[] = [
+  ...traps,
+  ...traps.map(trap => ({ ...trap, id: `${trap.id}-2`, x: trap.x + 8200, phase: (trap.phase + .47) % 2.7 })),
+];
 export function getTraps(levelId = 0): Trap[] {
-  if (levelId === 0) return traps;
-  return traps.map((trap, index) => ({
+  if (levelId === 0) return campaignTraps;
+  return campaignTraps.map((trap, index) => ({
     ...trap,
     x: Math.max(120, Math.min(FINISH - 140, trap.x + (index === 11 ? 0 : (index % 2 ? -1 : 1) * (12 + (levelId % 4) * 2)))),
     phase: (trap.phase + levelId * .21) % 2.7,
@@ -81,6 +85,8 @@ export const signs = [
   { x: 4850, text: "LAST NERVE", sub: "The finish is real. We checked." },
   { x: 5730, text: "FREE SHORTCUT →", sub: "Terms and conditions apply." },
   { x: 6510, text: "ONE. MORE. TRY.", sub: "You have made it this far." },
+  ...[105, 850, 1710, 2450, 3310, 4850, 5730, 6510].map((x, i) => ({ x: x + 7200, text: ["RUN. JUMP. REGRET.", "PERFECTLY SAFE", "CHECKPOINT SAVED", "TRUST ISSUES", "STILL FRIENDS?", "LAST NERVE", "FREE SHORTCUT →", "ONE. MORE. TRY."][i], sub: "The route is longer. The traps are meaner." })),
+  ...[105, 850].map((x, i) => ({ x: x + 14400, text: i ? "FINAL SECTOR" : "LAST STAND", sub: "No more maps after this one." })),
 ];
 export function trapShape(trap: Trap, time: number): { rect: Rect; active: boolean; warning: boolean; radius?: number } {
   const t = Math.max(0, time) + trap.phase;

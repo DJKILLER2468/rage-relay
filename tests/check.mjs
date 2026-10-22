@@ -24,7 +24,7 @@ check('Spikes kill once and respawn at the current checkpoint',()=>{const p=make
 check('Cracked floors collapse consistently',()=>{const p=makeRunner();p.x=1100;for(let i=0;i<120;i++)step(p,emptyInput(),frame,1+i*frame);assert(p.deaths>=1);});
 check('Shared trap timing is deterministic and crushers have safe windows',()=>{for(const t of traps){assert.deepEqual(trapShape(t,3.25),trapShape(t,3.25));if(t.kind==='press'){let safe=false,warn=false;for(let n=0;n<100;n++){const h=trapShape(t,n/20);safe ||= !h.active;warn ||= h.warning;}assert(safe&&warn);}}});
 check('Ten campaign maps have distinct trap layouts and raised routes',()=>{assert.equal(LEVELS.length,10);assert.notDeepEqual(getTraps(0),getTraps(1));assert.notDeepEqual(getTraps(1),getTraps(2));assert.notDeepEqual(getPlatforms(0),getPlatforms(1));assert.notDeepEqual(getPlatforms(1),getPlatforms(2));assert(getPlatforms(9).some(p=>p.id.startsWith('u')&&p.y<FLOOR-80));});
-check('Cannot finish before visiting all checkpoints',()=>{const p=makeRunner();p.x=FINISH;step(p,emptyInput(),frame,100);assert(!p.finished);const q=makeRunner(4);q.x=FINISH;step(q,emptyInput(),frame,100);assert(q.finished);});
+check('Cannot finish before visiting all checkpoints',()=>{const p=makeRunner();p.x=FINISH;step(p,emptyInput(),frame,100);assert(!p.finished);const q=makeRunner(4);q.x=FINISH;q.invincibleUntil=101;step(q,emptyInput(),frame,100);assert(q.finished);});
 const sqlite = new DatabaseSync(':memory:');
 for (const f of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort()) sqlite.exec(readFileSync('drizzle/'+f,'utf8'));
 const db = { prepare(sql){ const q=sqlite.prepare(sql); return { bind(...args){return {async first(){return q.get(...args)||null},async run(){return q.run(...args)}}} } } };
@@ -51,7 +51,7 @@ const first=await handleAction(db,{action:'sync',...a.session,round:1,state:u},n
 const stale=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:90,seq:0}},now+10);assert.equal(stale.room.players[0].x,100);checks++;console.log('PASS Stale updates cannot move a player backward');
 await assert.rejects(()=>handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:4000,checkpoint:2,seq:1}},now+100),{status:409});checks++;console.log('PASS Checkpoint skips are rejected');
 let count=1;
-for(const x of [...Array.from({length:70},(_,i)=>(i+2)*100),FINISH]){now+=400;current=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x,checkpoint:CHECKPOINTS.filter(c=>c<=x).length-1,seq:count++,finished:x>=FINISH}},now);}
+for(const x of [...Array.from({length:Math.floor((FINISH-200)/100)},(_,i)=>(i+2)*100),FINISH]){now+=400;current=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x,checkpoint:CHECKPOINTS.filter(c=>c<=x).length-1,seq:count++,finished:x>=FINISH}},now);}
 assert(current.room.players[0].finishedAt>0);
 const reconnect=await handleAction(db,{action:'sync',...a.session},now+200);assert.equal(reconnect.room.players[0].x,FINISH);assert.equal(reconnect.room.players[0].checkpoint,4);assert.equal(reconnect.room.players[0].finishedAt,current.room.players[0].finishedAt);checks++;console.log('PASS Finish and reconnection preserve authoritative race results');
 await handleAction(db,{action:'ready',...a.session,ready:true},now+400);

@@ -8,8 +8,8 @@ const actions = [
 ];
 for(const levelId of Array.from({length:10},(_,i)=>i)){
 let p=makeRunner(0,levelId),t=3.5;
-for(let sector=0;sector<9;sector++){
-  const goal=sector===8?FINISH:(sector+1)*800+60;
+for(let sector=0;sector<20;sector++){
+  const goal=sector===19?FINISH:(sector+1)*800+60;
   let beam=[p],found=false;
   search: for(let depth=0;depth<280;depth++){
     const next=new Map();
