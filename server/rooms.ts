@@ -64,12 +64,20 @@ export async function handleAction(db: DB, input: Record<string, unknown>, now =
       if (!numeric(levelId, 0, LEVELS.length - 1) || !Number.isInteger(levelId)) throw new GameError("Choose a valid course.");
       s.levelId = levelId as number; s.players.forEach(q => { q.ready = false; });
     } else if (action === "ready") {
-      if (s.phase === "racing" && !s.players.some(q => q.finishedAt !== null)) throw new GameError("Finish the race before requesting a rematch.");
+      if (s.phase === "racing" && !s.players.some(q => q.finishedAt !== null)) throw new GameError("Reach the finish before voting for the next map.");
       p.ready = input.ready === true;
       const active = s.players.filter(q => !q.departed);
       if (active.every(q => q.ready) && (s.phase === "lobby" ? active.length >= 2 : true)) {
-        s.players = active.map(q => player(q.slot, q.name, q.tokenHash, now));
-        s.round++; s.phase = active.length >= 2 ? "racing" : "lobby"; s.startAt = active.length >= 2 ? now + 3500 : 0;
+        const finishingCampaign = s.phase === "racing" && s.round >= LEVELS.length;
+        s.players = finishingCampaign ? active.map(q => ({ ...q, ready: false })) : active.map(q => player(q.slot, q.name, q.tokenHash, now));
+        if (s.phase === "complete") { s.round = 1; s.levelId = 0; }
+        else if (s.phase === "lobby") { s.round = 1; }
+        else {
+          if (s.round < LEVELS.length) s.levelId = (s.levelId + 1) % LEVELS.length;
+          s.round++;
+        }
+        s.phase = s.round > LEVELS.length ? "complete" : active.length >= 2 ? "racing" : "lobby";
+        s.startAt = s.phase === "racing" ? now + 3500 : 0;
       }
     } else if (action === "sync") {
       const u = input.state as Record<string, unknown> | undefined;

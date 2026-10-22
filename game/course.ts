@@ -4,9 +4,16 @@ export type Trap = { id: string; kind: "spikes" | "pop" | "saw" | "press"; x: nu
 export const WIDTH = 7300, FLOOR = 440, FINISH = 7160, PLAYER_W = 26, PLAYER_H = 34;
 export const CHECKPOINTS = [60, 1660, 3260, 4860, 6460];
 export const LEVELS = [
-  { id: 0, name: "Bad Idea Factory", subtitle: "Crushers, saws, and deeply unreliable floors.", palette: "factory" },
-  { id: 1, name: "Flooded Arcade", subtitle: "Raised walkways, neon hazards, tighter timing.", palette: "arcade" },
-  { id: 2, name: "Toybox Catacombs", subtitle: "Fragile platforms and traps that punish rushing.", palette: "toybox" },
+  { id: 0, name: "Scrapline City", subtitle: "Learn the rhythm. The rooftops are optional.", palette: "factory" },
+  { id: 1, name: "Neon Freight", subtitle: "Moving steel, high routes, tighter jumps.", palette: "arcade" },
+  { id: 2, name: "Floodgate District", subtitle: "Rising walkways and floors that give way.", palette: "flood" },
+  { id: 3, name: "Reactor Rows", subtitle: "Hot lanes. Short windows. Keep moving.", palette: "reactor" },
+  { id: 4, name: "Rustyard Rush", subtitle: "Broken catwalks over a very bad drop.", palette: "rust" },
+  { id: 5, name: "Skybridge Arsenal", subtitle: "Climb the upper route under fire.", palette: "sky" },
+  { id: 6, name: "Blackout Barrage", subtitle: "Warning lights are your last advantage.", palette: "blackout" },
+  { id: 7, name: "Iron Serpent", subtitle: "A long chain of traps with little room to stop.", palette: "iron" },
+  { id: 8, name: "Tower Nine", subtitle: "Stacked platforms. Precise jumps. No soft landing.", palette: "tower" },
+  { id: 9, name: "Last Stand Core", subtitle: "Everything you learned, all at once.", palette: "core" },
 ] as const;
 export const CHAPTERS = [
   { name: "Warm welcome", subtitle: "The floor is mostly your friend.", color: "#b7ff62", start: 0 },
@@ -21,15 +28,22 @@ for (let i = 0; i < 9; i++) {
   if ([2, 5].includes(i)) platforms.push({ id: `${i}f`, x: x + 620, y: FLOOR, w: 120, h: 22, fragile: true });
 }
 export function getPlatforms(levelId = 0): Platform[] {
-  if (levelId === 0) return platforms;
-  return platforms.map((platform) => {
+  const base = platforms.map((platform) => {
     const sector = Math.floor(platform.x / 800);
-    if (levelId === 1 && platform.id === "7f") return { ...platform, fragile: false };
-    if (levelId === 1 && platform.id.endsWith("b") && sector % 3 !== 0 && sector < 7) return { ...platform, y: FLOOR - 58 };
-    if (levelId === 2 && platform.id.endsWith("b") && sector % 3 === 1 && sector < 7) return { ...platform, y: FLOOR - 58 };
-    if (levelId === 2 && platform.id.endsWith("c") && sector % 3 === 2 && sector < 8) return { ...platform, fragile: true, h: 20 };
+    if (levelId >= 1 && platform.id.endsWith("b") && (sector + levelId) % 3 !== 0 && sector < 8) return { ...platform, y: FLOOR - (levelId > 5 ? 68 : 58) };
+    if (levelId >= 2 && platform.id.endsWith("c") && (sector + levelId) % 4 === 1 && sector < 8) return { ...platform, fragile: true, h: 20 };
+    if (levelId >= 4 && platform.id.endsWith("f") && (sector + levelId) % 2 === 0) return { ...platform, fragile: true };
     return platform;
   });
+  // Optional two-level catwalks. The ground path stays open while the raised
+  // route rewards clean jumps and gives players a genuine multi-floor view.
+  const upper: Platform[] = [];
+  for (let sector = 0; sector < 9; sector++) {
+    const x = sector * 800;
+    if ((sector + levelId) % 2 === 0) upper.push({ id: `u${sector}a`, x: x + 215, y: FLOOR - 86, w: 150, h: 18 });
+    if ((sector + levelId) % 3 !== 1) upper.push({ id: `u${sector}b`, x: x + 505, y: FLOOR - 142, w: 145, h: 18, fragile: levelId >= 6 && sector % 2 === 0 });
+  }
+  return [...base, ...upper];
 }
 export const traps: Trap[] = [
   { id: "s0", kind: "spikes", x: 505, w: 42, phase: 0 },
@@ -50,8 +64,13 @@ export const traps: Trap[] = [
 ];
 export function getTraps(levelId = 0): Trap[] {
   if (levelId === 0) return traps;
-  if (levelId === 1) return traps.map((trap, index) => ({ ...trap, x: Math.max(120, Math.min(FINISH - 140, trap.x + (index === 11 ? 0 : index === 13 ? 100 : index % 2 ? -85 : 105))), phase: (trap.phase + .42) % 2.7, w: index === 12 ? 70 : trap.w, kind: index === 12 ? "pop" : index % 4 === 0 ? "saw" : trap.kind }));
-  return traps.map((trap, index) => ({ ...trap, x: Math.max(120, Math.min(FINISH - 140, trap.x + (index % 2 ? 72 : -54))), phase: (trap.phase + .86) % 2.7, kind: index % 3 === 1 ? "pop" : trap.kind }));
+  return traps.map((trap, index) => ({
+    ...trap,
+    x: Math.max(120, Math.min(FINISH - 140, trap.x + (index === 11 ? 0 : (index % 2 ? -1 : 1) * (12 + (levelId % 4) * 2)))),
+    phase: (trap.phase + levelId * .21) % 2.7,
+    w: levelId >= 7 && index % 4 === 0 ? Math.min(100, trap.w + 10) : trap.w,
+    
+  }));
 }
 export const signs = [
   { x: 105, text: "RUN. JUMP. REGRET.", sub: "Hold jump for more height." },

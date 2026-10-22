@@ -1,7 +1,7 @@
 import { CHECKPOINTS, CHAPTERS, FINISH, FLOOR, PLAYER_H, PLAYER_W, WIDTH, getPlatforms, getTraps, signs, trapShape } from "./course";
 import type { Runner } from "./engine";
 import type { Player } from "./protocol";
-export const COLORS = ["#ff885b", "#6ae1e1", "#d9a7ff", "#f1d56b"];
+export const COLORS = ["#ff5a4f", "#30e6ff", "#d05bff", "#d7ff48"];
 export type RenderOptions = { p: Runner; peers: Player[]; slot: number; name: string; time: number; camera: number; preview?: boolean; reduced?: boolean };
 function round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, color: string) { c.fillStyle = color; c.beginPath(); c.roundRect(x, y, w, h, r); c.fill(); }
 function text(c: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, font = "monospace", align: CanvasTextAlign = "left") { c.fillStyle = color; c.font = `700 ${size}px ${font}`; c.textAlign = align; c.fillText(s, x, y); }
@@ -9,24 +9,16 @@ function text(c: CanvasRenderingContext2D, s: string, x: number, y: number, size
 export function drawCharacter(c: CanvasRenderingContext2D, x: number, y: number, slot: number, time: number, vx = 0, scale = 1, alpha = 1) {
   c.save(); c.translate(x + PLAYER_W / 2, y + PLAYER_H / 2); c.scale(scale, scale); c.globalAlpha = alpha;
   const bob = Math.abs(vx) > 20 ? Math.sin(time * 22) * 1.6 : Math.sin(time * 3) * .5;
-  c.translate(0, bob); c.lineWidth = 3; c.strokeStyle = "#13181c";
-  c.fillStyle = ["#b84c36", "#2d8d9c", "#754994", "#8b722d"][slot % 4];
-  c.beginPath(); c.roundRect(-13, 9, 10, 10, 4); c.roundRect(3, 9, 10, 10, 4); c.fill(); c.stroke();
-  c.fillStyle = COLORS[slot]; c.beginPath();
-  if (slot % 4 === 0) {
-    c.moveTo(-13, 10); c.quadraticCurveTo(-20, -3, -10, -17); c.lineTo(-4, -9); c.lineTo(2, -25); c.quadraticCurveTo(7, -13, 13, -6); c.quadraticCurveTo(23, 13, 6, 16); c.lineTo(-6, 16);
-  } else if (slot % 4 === 1) {
-    c.moveTo(1, -25); c.bezierCurveTo(5, -16, 19, -4, 17, 6); c.bezierCurveTo(14, 23, -16, 22, -17, 6); c.bezierCurveTo(-20, -5, -4, -17, 1, -25);
-  } else if (slot % 4 === 2) {
-    c.moveTo(0, -25); c.lineTo(15, -10); c.lineTo(18, 6); c.lineTo(10, 17); c.lineTo(-10, 17); c.lineTo(-18, 6); c.lineTo(-15, -10);
-  } else {
-    c.moveTo(-13, -8); c.quadraticCurveTo(-15, -24, 0, -26); c.quadraticCurveTo(16, -23, 13, -8); c.lineTo(17, 10); c.quadraticCurveTo(0, 20, -17, 10);
-  }
-  c.closePath(); c.fill(); c.stroke();
-  c.fillStyle = ["#ffd286", "#baffee", "#f2d2ff", "#fff3ac"][slot % 4]; c.beginPath(); c.ellipse(-7, -7, 3, 6, .5, 0, Math.PI * 2); c.fill();
-  round(c, -12, -4, 26, 13, 5, "#172027");
-  c.fillStyle = "#fff8e8"; const dx = vx < 0 ? -1 : 1;
-  c.fillRect(-7 + dx, 0, 5, 5); c.fillRect(3 + dx, 0, 5, 5);
+  c.translate(0, bob); c.lineWidth = 3; c.strokeStyle = "#07111d";
+  const color = COLORS[slot % 4], shade = ["#942b39", "#087c9c", "#7627a0", "#536a19"][slot % 4];
+  // Original arcade runner: helmet, visor, armored torso, and jet boots.
+  round(c, -13, 8, 10, 11, 2, shade); round(c, 3, 8, 10, 11, 2, shade);
+  c.strokeStyle = "#07111d"; c.strokeRect(-13, 8, 10, 11); c.strokeRect(3, 8, 10, 11);
+  c.fillStyle = color; c.beginPath(); c.moveTo(-12, -8); c.lineTo(-10, -18); c.lineTo(-4, -24); c.lineTo(7, -24); c.lineTo(13, -16); c.lineTo(14, 4); c.lineTo(9, 14); c.lineTo(-9, 14); c.lineTo(-14, 4); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = "#101b2b"; c.beginPath(); c.moveTo(-10, -9); c.lineTo(-6, -16); c.lineTo(8, -16); c.lineTo(12, -9); c.lineTo(10, -2); c.lineTo(-9, -2); c.closePath(); c.fill();
+  c.fillStyle = "#e8f8ff"; c.fillRect(-7, -11, 5, 3); c.fillRect(3, -11, 5, 3);
+  c.fillStyle = "#fff"; c.fillRect(-3, 2, 6, 4); c.fillStyle = "#101b2b"; c.fillRect(-1, 2, 2, 4);
+  c.fillStyle = color; c.fillRect(-15, -4, 4, 10); c.fillRect(11, -4, 4, 10);
   c.restore();
 }
 
@@ -40,11 +32,19 @@ export function render(canvas: HTMLCanvasElement, opts: RenderOptions) {
   c.setTransform(canvas.width / vw, 0, 0, canvas.height / vh, 0, 0);
   const { p, slot, name, time, preview, reduced } = opts;
   const peers = opts.peers.filter(peer => !peer.dead && !peer.departed);
-  const palette = p.levelId === 1
-    ? { sky: ["#0c2334", "#102a42"], wall: "#12394a", wallDeep: "#0d2d3a", grid: "#1d5261", cable: "#37859b", floor: "#73d5d1", glow: "#60d9e8", fog: "#38a6ce" }
-    : p.levelId === 2
-      ? { sky: ["#302232", "#1f1b30"], wall: "#403047", wallDeep: "#2a2237", grid: "#60445b", cable: "#9b6282", floor: "#e7b56a", glow: "#ffbf64", fog: "#bb669c" }
-      : { sky: ["#172224", "#101719"], wall: "#1c2b2a", wallDeep: "#152121", grid: "#2d3b32", cable: "#455044", floor: "#91a66e", glow: "#b7ff62", fog: "#79ba4d" };
+  const palettes = [
+    { sky: ["#091321", "#101c31"], wall: "#142640", wallDeep: "#0d1b2e", grid: "#244365", cable: "#536c9d", floor: "#ff5a4f", glow: "#ffb13b", fog: "#e44360" },
+    { sky: ["#071a2a", "#102a42"], wall: "#12394a", wallDeep: "#0d2d3a", grid: "#1d5261", cable: "#37859b", floor: "#30e6ff", glow: "#30e6ff", fog: "#38a6ce" },
+    { sky: ["#21162b", "#1b1b36"], wall: "#403047", wallDeep: "#2a2237", grid: "#60445b", cable: "#9b6282", floor: "#d05bff", glow: "#ffbf64", fog: "#bb669c" },
+    { sky: ["#16200c", "#102319"], wall: "#28391c", wallDeep: "#172718", grid: "#48602d", cable: "#87944d", floor: "#d7ff48", glow: "#f5ff6b", fog: "#6db95c" },
+    { sky: ["#291817", "#1c2024"], wall: "#472c27", wallDeep: "#2d2222", grid: "#704037", cable: "#a66b4c", floor: "#ff713b", glow: "#ffc65c", fog: "#e75142" },
+    { sky: ["#091d38", "#182b4e"], wall: "#19395b", wallDeep: "#102741", grid: "#2e5680", cable: "#5793c2", floor: "#5eaaff", glow: "#c0edff", fog: "#477fcc" },
+    { sky: ["#080d1b", "#101628"], wall: "#182035", wallDeep: "#101626", grid: "#344057", cable: "#58657a", floor: "#9a84ff", glow: "#bcaaff", fog: "#5756b1" },
+    { sky: ["#191d1e", "#121718"], wall: "#30383a", wallDeep: "#20292b", grid: "#4d595c", cable: "#8a9b93", floor: "#d5ff55", glow: "#fff18d", fog: "#81a45d" },
+    { sky: ["#211a30", "#161b31"], wall: "#34304d", wallDeep: "#222441", grid: "#514773", cable: "#8981ba", floor: "#ff6cca", glow: "#ffc0ec", fog: "#a456b0" },
+    { sky: ["#25120e", "#271a20"], wall: "#442320", wallDeep: "#2a1c23", grid: "#6b3430", cable: "#b15846", floor: "#ff5949", glow: "#fff16b", fog: "#cf3647" },
+  ];
+  const palette = palettes[Math.min(9, p.levelId)];
   const camera = Math.max(0, Math.min(WIDTH - vw, opts.camera));
   const chapter = CHAPTERS[Math.min(2, Math.floor((camera + vw * .3) / 2400))];
   const bg = c.createLinearGradient(0, 0, 0, vh); bg.addColorStop(0, palette.sky[0]); bg.addColorStop(1, palette.sky[1]);

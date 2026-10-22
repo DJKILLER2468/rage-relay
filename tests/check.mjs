@@ -23,7 +23,7 @@ check('Short tap produces a lower jump than a hold',()=>{function height(hold){c
 check('Spikes kill once and respawn at the current checkpoint',()=>{const p=makeRunner(1);p.x=505;p.invincibleUntil=0;step(p,emptyInput(),frame,4);assert.equal(p.deaths,1);assert(p.deadUntil);for(let i=0;i<100;i++)step(p,emptyInput(),frame,4+i*frame);assert.equal(p.deaths,1);assert.equal(p.x,CHECKPOINTS[1]);assert(!p.deadUntil);});
 check('Cracked floors collapse consistently',()=>{const p=makeRunner();p.x=1100;for(let i=0;i<120;i++)step(p,emptyInput(),frame,1+i*frame);assert(p.deaths>=1);});
 check('Shared trap timing is deterministic and crushers have safe windows',()=>{for(const t of traps){assert.deepEqual(trapShape(t,3.25),trapShape(t,3.25));if(t.kind==='press'){let safe=false,warn=false;for(let n=0;n<100;n++){const h=trapShape(t,n/20);safe ||= !h.active;warn ||= h.warning;}assert(safe&&warn);}}});
-check('Three selectable courses have distinct trap layouts and world geometry',()=>{assert.equal(LEVELS.length,3);assert.notDeepEqual(getTraps(0),getTraps(1));assert.notDeepEqual(getTraps(1),getTraps(2));assert.notDeepEqual(getPlatforms(0),getPlatforms(1));assert.notDeepEqual(getPlatforms(1),getPlatforms(2));});
+check('Ten campaign maps have distinct trap layouts and raised routes',()=>{assert.equal(LEVELS.length,10);assert.notDeepEqual(getTraps(0),getTraps(1));assert.notDeepEqual(getTraps(1),getTraps(2));assert.notDeepEqual(getPlatforms(0),getPlatforms(1));assert.notDeepEqual(getPlatforms(1),getPlatforms(2));assert(getPlatforms(9).some(p=>p.id.startsWith('u')&&p.y<FLOOR-80));});
 check('Cannot finish before visiting all checkpoints',()=>{const p=makeRunner();p.x=FINISH;step(p,emptyInput(),frame,100);assert(!p.finished);const q=makeRunner(4);q.x=FINISH;step(q,emptyInput(),frame,100);assert(q.finished);});
 const sqlite = new DatabaseSync(':memory:');
 for (const f of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort()) sqlite.exec(readFileSync('drizzle/'+f,'utf8'));
@@ -57,8 +57,22 @@ const reconnect=await handleAction(db,{action:'sync',...a.session},now+200);asse
 await handleAction(db,{action:'ready',...a.session,ready:true},now+400);
 await handleAction(db,{action:'ready',...b.session,ready:true},now+450);
 await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+475);
-current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+500);assert.equal(current.room.round,2);assert(current.room.players.every(p=>p.x===60&&p.checkpoint===0&&p.finishedAt===null));
-const delayed=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:7100,checkpoint:4,seq:999,finished:true}},now+5000);assert.equal(delayed.room.players[0].x,60);checks++;console.log('PASS Rematch resets both players and ignores old-round packets');
+current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+500);assert.equal(current.room.round,2);assert.equal(current.room.levelId,3);assert(current.room.players.every(p=>p.x===60&&p.checkpoint===0&&p.finishedAt===null));
+const delayed=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:7100,checkpoint:4,seq:999,finished:true}},now+5000);assert.equal(delayed.room.players[0].x,60);checks++;console.log('PASS Next map advances campaign, resets players, and ignores old-round packets');
+// Force the room to the last map to verify the tenth map is played before campaign completion.
+const stored=sqlite.prepare('SELECT state FROM race_rooms WHERE code=?').get(code);
+const finalState=JSON.parse(stored.state);finalState.round=10;finalState.levelId=9;finalState.phase='racing';finalState.players.forEach(p=>{p.ready=false;p.finishedAt=now+1;});
+sqlite.prepare('UPDATE race_rooms SET state=?,version=version+1 WHERE code=?').run(JSON.stringify(finalState),code);
+await handleAction(db,{action:'ready',...a.session,ready:true},now+10);
+await handleAction(db,{action:'ready',...b.session,ready:true},now+20);
+await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+30);
+current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+40);
+assert.equal(current.room.phase,'complete');assert.equal(current.room.round,11);assert.equal(current.room.levelId,9);
+await handleAction(db,{action:'ready',...a.session,ready:true},now+50);
+await handleAction(db,{action:'ready',...b.session,ready:true},now+60);
+await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+70);
+current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+80);
+assert.equal(current.room.phase,'racing');assert.equal(current.room.round,1);assert.equal(current.room.levelId,0);checks++;console.log('PASS Tenth map completes the campaign; group vote restarts at map one');
 const c=await create(); await handleAction(db,{action:'join',code:c.session.code,name:'B'},now); await handleAction(db,{action:'join',code:c.session.code,name:'C'},now+1); const joins=await Promise.allSettled([handleAction(db,{action:'join',code:c.session.code,name:'D'},now+2),handleAction(db,{action:'join',code:c.session.code,name:'E'},now+2)]);
 assert.equal(joins.filter(x=>x.status==='fulfilled').length,1);checks++;console.log('PASS Simultaneous join requests cannot overfill a room');
 console.log(`${checks} checks passed.`);

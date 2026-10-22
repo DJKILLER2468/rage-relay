@@ -6,7 +6,7 @@ const actions = [
   {...emptyInput(),jump:true}, {...emptyInput()},
   {...emptyInput(),left:true,jump:true}, {...emptyInput(),left:true}
 ];
-for(const levelId of [0,1,2]){
+for(const levelId of Array.from({length:10},(_,i)=>i)){
 let p=makeRunner(0,levelId),t=3.5;
 for(let sector=0;sector<9;sector++){
   const goal=sector===8?FINISH:(sector+1)*800+60;

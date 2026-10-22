@@ -3,5 +3,5 @@ export type Player = {
   checkpoint: number; deaths: number; finishedAt: number | null; seq: number;
   lastSeen: number; departed: boolean; dead: boolean; maxX: number;
 };
-export type Room = { code: string; round: number; phase: "lobby" | "racing"; startAt: number; levelId: number; players: Player[]; serverNow: number };
+export type Room = { code: string; round: number; phase: "lobby" | "racing" | "complete"; startAt: number; levelId: number; players: Player[]; serverNow: number };
 export type Session = { code: string; token: string; slot: number };
