@@ -45,6 +45,8 @@ await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+70);
 let current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+75);assert.equal(current.room.phase,'racing');assert.equal(current.room.round,1);assert.equal(current.room.levelId,2);assert.equal(current.room.startAt,now+3575);checks++;console.log('PASS All four players share selected course and countdown');
 now=current.room.startAt+1000;
 const u={x:100,y:406,vx:0,vy:0,checkpoint:0,deaths:0,dead:false,finished:false,seq:0};
+const simultaneous=await Promise.all([a.session,b.session,cPlayer.session,dPlayer.session].map(session=>handleAction(db,{action:'sync',...session,round:1,state:u},now+1)));
+assert.equal(simultaneous.length,4);current=await handleAction(db,{action:'sync',...a.session,round:1},now+2);assert(current.room.players.every(p=>p.x===100));checks++;console.log('PASS Four simultaneous movement updates survive room contention');
 const first=await handleAction(db,{action:'sync',...a.session,round:1,state:u},now);
 const stale=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:90,seq:0}},now+10);assert.equal(stale.room.players[0].x,100);checks++;console.log('PASS Stale updates cannot move a player backward');
 await assert.rejects(()=>handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:4000,checkpoint:2,seq:1}},now+100),{status:409});checks++;console.log('PASS Checkpoint skips are rejected');

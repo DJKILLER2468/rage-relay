@@ -24,8 +24,9 @@ export function getPlatforms(levelId = 0): Platform[] {
   if (levelId === 0) return platforms;
   return platforms.map((platform) => {
     const sector = Math.floor(platform.x / 800);
-    if (levelId === 1 && platform.id.endsWith("b") && sector % 3 !== 0) return { ...platform, y: FLOOR - 58 };
-    if (levelId === 2 && platform.id.endsWith("b") && sector % 3 === 1) return { ...platform, y: FLOOR - 82 };
+    if (levelId === 1 && platform.id === "7f") return { ...platform, fragile: false };
+    if (levelId === 1 && platform.id.endsWith("b") && sector % 3 !== 0 && sector < 7) return { ...platform, y: FLOOR - 58 };
+    if (levelId === 2 && platform.id.endsWith("b") && sector % 3 === 1 && sector < 7) return { ...platform, y: FLOOR - 58 };
     if (levelId === 2 && platform.id.endsWith("c") && sector % 3 === 2 && sector < 8) return { ...platform, fragile: true, h: 20 };
     return platform;
   });
@@ -49,7 +50,7 @@ export const traps: Trap[] = [
 ];
 export function getTraps(levelId = 0): Trap[] {
   if (levelId === 0) return traps;
-  if (levelId === 1) return traps.map((trap, index) => ({ ...trap, x: Math.max(120, Math.min(FINISH - 140, trap.x + (index % 2 ? -85 : 105))), phase: (trap.phase + .42) % 2.7, kind: index % 4 === 0 ? "saw" : trap.kind }));
+  if (levelId === 1) return traps.map((trap, index) => ({ ...trap, x: Math.max(120, Math.min(FINISH - 140, trap.x + (index === 11 ? 0 : index === 13 ? 100 : index % 2 ? -85 : 105))), phase: (trap.phase + .42) % 2.7, w: index === 12 ? 70 : trap.w, kind: index === 12 ? "pop" : index % 4 === 0 ? "saw" : trap.kind }));
   return traps.map((trap, index) => ({ ...trap, x: Math.max(120, Math.min(FINISH - 140, trap.x + (index % 2 ? 72 : -54))), phase: (trap.phase + .86) % 2.7, kind: index % 3 === 1 ? "pop" : trap.kind }));
 }
 export const signs = [

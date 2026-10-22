@@ -1,6 +1,8 @@
 # Rage Relay
 
-Online trap-platformer race built for Yuvraj Sinha. Two to four players join with a six-character room code, ready up, choose one of three courses, and race. No accounts or downloads are required. Includes solo practice, keyboard/touch controls, four checkpoints, unlimited retries, rematch votes, and same-tab reconnection.
+Online trap-platformer race. Two to four players join with a six-character room code, ready up, choose one of three courses, and race. No accounts or downloads are required. Includes solo practice, keyboard/touch controls, four checkpoints, unlimited retries, rematch votes, and same-tab reconnection.
+
+**Live game:** https://rage-relay-yuvraj.arcanecamel7.chatgpt.site
 
 ## Rules
 

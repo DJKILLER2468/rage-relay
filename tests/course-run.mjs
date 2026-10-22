@@ -6,7 +6,8 @@ const actions = [
   {...emptyInput(),jump:true}, {...emptyInput()},
   {...emptyInput(),left:true,jump:true}, {...emptyInput(),left:true}
 ];
-let p=makeRunner(),t=3.5;
+for(const levelId of [0,1,2]){
+let p=makeRunner(0,levelId),t=3.5;
 for(let sector=0;sector<9;sector++){
   const goal=sector===8?FINISH:(sector+1)*800+60;
   let beam=[p],found=false;
@@ -25,7 +26,8 @@ for(let sector=0;sector<9;sector++){
     if(!beam.length)break;
   }
   assert(found,`No valid route found through sector ${sector+1}`);
-  console.log(`PASS sector ${sector+1}: continuous physics route reached x=${Math.round(p.x)}, elapsed=${t.toFixed(1)}s`);
+  console.log(`PASS level ${levelId+1}, sector ${sector+1}: continuous physics route reached x=${Math.round(p.x)}, elapsed=${t.toFixed(1)}s`);
 }
 assert(p.finished);assert.equal(p.deaths,0);assert.equal(p.checkpoint,4);
-console.log('PASS Full course completed by physics planner with all checkpoints and active traps.');
+console.log(`PASS Full course ${levelId+1} completed by physics planner with all checkpoints and active traps.`);
+}
