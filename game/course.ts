@@ -32,7 +32,7 @@ export function getPlatforms(levelId = 0): Platform[] {
   const base = platforms.map((platform) => {
     const sector = Math.floor(platform.x / 800);
     if (platform.id.endsWith("a") && isDropSector(sector)) return { ...platform, w: 210 };
-    if (levelId >= 1 && platform.id.endsWith("b") && (sector + levelId) % 3 !== 0 && sector < 19) return { ...platform, y: FLOOR - (levelId > 5 ? 68 : 58) };
+    if (levelId >= 1 && platform.id.endsWith("b") && !isDropSector(sector) && (sector + levelId) % 3 !== 0 && sector < 19) return { ...platform, y: FLOOR - (levelId > 5 ? 68 : 58) };
     if (levelId >= 2 && platform.id.endsWith("c") && (sector + levelId) % 4 === 1 && sector < 8) return { ...platform, fragile: true, h: 20 };
     if (levelId >= 4 && platform.id.endsWith("f") && (sector + levelId) % 2 === 0) return { ...platform, fragile: true };
     return platform;
