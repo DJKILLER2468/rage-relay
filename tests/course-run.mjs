@@ -16,7 +16,7 @@ for(let sector=0;sector<20;sector++){
     const next=new Map();
     for(const old of beam)for(const input of actions){
       const q={...old,fragile:{...old.fragile}};
-      for(let j=0;j<12;j++){step(q,input,1/120,t+depth*.1+j/120);if(q.deadUntil)break;}
+      for(let j=0;j<6;j++){step(q,input,1/60,t+depth*.1+j/60);if(q.deadUntil)break;}
       if(q.deadUntil||q.x<sector*800-20||q.y>510)continue;
       if(q.x>=goal&&q.grounded){p=q;t+= (depth+1)*.1;found=true;break search;}
       const key=[Math.round(q.x/9),Math.round(q.y/10),Math.round(q.vx/90),Math.round(q.vy/120),q.held].join(',');

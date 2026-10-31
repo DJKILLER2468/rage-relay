@@ -41,7 +41,9 @@ export function step(p: Runner, input: Inputs, dt: number, time: number): GameEv
   if (direction) p.facing = direction;
   const oldX = p.x, oldY = p.y;
   p.vy = Math.min(900, p.vy + 1700 * dt);
-  p.x = Math.max(8, Math.min(WIDTH - PLAYER_W - 8, p.x + p.vx * dt)); p.y += p.vy * dt; p.grounded = false;
+  // Resolve horizontal motion first, then vertical motion. This prevents a
+  // downward diagonal step from entering the side or body of a platform.
+  p.x = Math.max(8, Math.min(WIDTH - PLAYER_W - 8, p.x + p.vx * dt)); p.grounded = false;
   const platforms = getPlatforms(p.levelId).filter(platform => !(platform.fragile && p.fragile[platform.id] !== undefined && time - p.fragile[platform.id] > .24));
   // Solid sides keep the runner from sliding into platform bodies. Passing up
   // through a platform is still allowed, as in a classic one-way platformer.
@@ -56,6 +58,7 @@ export function step(p: Runner, input: Inputs, dt: number, time: number): GameEv
   }
   // Select the first surface crossed during this tick. Sorting prevents a
   // lower overlapping platform from winning just because it appeared first.
+  p.y += p.vy * dt;
   const landing = platforms.filter(platform => {
     if (p.vy < 0 || oldY + PLAYER_H > platform.y + 1 || p.y + PLAYER_H < platform.y) return false;
     const dy = p.y - oldY, t = dy > 0 ? (platform.y - (oldY + PLAYER_H)) / dy : 0;

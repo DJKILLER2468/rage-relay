@@ -3,14 +3,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, ArrowLeft, ArrowUp, Copy, Check, Volume2, VolumeX, X, RotateCcw, Flag, Skull, Users, HelpCircle, LogOut, Trophy, Link as LinkIcon, Maximize2, Zap } from "lucide-react";
 import { makeRunner, step, emptyInput, type Runner, type Inputs } from "../game/engine";
 import { CHAPTERS, CHECKPOINTS, FINISH, FLOOR, LEVELS, PLAYER_H, WIDTH } from "../game/course";
-import { render, COLORS } from "../game/render";
+import { render, resizeCanvas, COLORS } from "../game/render";
 import { Sound } from "../game/sound";
+import { addRoomSample, INTERPOLATION_BUFFER_MS, interpolatePlayer } from "../game/interpolation";
 import type { Player, Room, Session } from "../game/protocol";
 
 type Screen = "home" | "lobby" | "race";
 class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
+const ROOM_WS_BASE = (process.env.NEXT_PUBLIC_ROOM_WS_BASE_URL || "").replace(/\/+$/, "");
+const roomApiUrl = ROOM_WS_BASE
+  ? `${ROOM_WS_BASE.replace(/^ws:/, "http:").replace(/^wss:/, "https:").replace(/\/ws$/, "")}/api/rooms`
+  : "/api/rooms";
 async function request(body: object) {
-  const res = await fetch("/api/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(5500) });
+  const res = await fetch(roomApiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(5500) });
   const data = await res.json() as { error?: string; room: Room; session?: Session };
   if (!res.ok) throw new ApiError(data.error || "Could not connect. Please try again.", res.status);
   return data as { room: Room; session?: Session };
@@ -39,10 +44,11 @@ export default function GameApp() {
   const [homeTab, setHomeTab] = useState<"create" | "join">("create");
   const [session, setSession] = useState<Session | null>(null), [room, setRoom] = useState<Room | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [help, setHelp] = useState(false), [muted, setMuted] = useState(false);
-  const [toast, setToast] = useState(""), [connected, setConnected] = useState(true), [linkFallback, setLinkFallback] = useState(""), [pingMs, setPingMs] = useState(0);
+  const [toast, setToast] = useState(""), [connected, setConnected] = useState(true), [linkFallback, setLinkFallback] = useState(""), [pingMs, setPingMs] = useState(0), [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [hud, setHud] = useState({ time: 0, deaths: 0, checkpoint: 0, x: 60, finished: false, dead: false, reason: "" });
   const canvas = useRef<HTMLCanvasElement>(null), gameShell = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDialogElement>(null);
   const sessionRef = useRef<Session | null>(null), roomRef = useRef<Room | null>(null), runner = useRef<Runner>(makeRunner());
+  const socket = useRef<WebSocket | null>(null), roomSamples = useRef<Room[]>([]), lastSnapshotAt = useRef(Date.now());
   const input = useRef<Inputs>(emptyInput()), sound = useRef<Sound | null>(null), seq = useRef(0), clockOffset = useRef(0);
   const lastGood = useRef(Date.now()), practiceStart = useRef(0), helpRef = useRef(false), leaving = useRef(false);
   const showToast = useCallback((message: string) => { setToast(message); }, []);
@@ -73,46 +79,90 @@ export default function GameApp() {
       p.invincibleUntil = Math.max(0, (r.serverNow - r.startAt) / 1000) + .55;
       runner.current = p; seq.current = mine.seq + 1; input.current = emptyInput();
     }
-    roomRef.current = r; setRoom(r); setScreen(r.phase === "lobby" ? "lobby" : "race");
+    roomRef.current = r; roomSamples.current = addRoomSample(roomSamples.current, r); lastSnapshotAt.current = Date.now(); setRoom(r); setScreen(r.phase === "lobby" ? "lobby" : "race");
     lastGood.current = Date.now(); setConnected(true); setBusy(false);
   }, []);
   useEffect(() => {
     if (!session) return;
-    let cancelled = false, timer: ReturnType<typeof setTimeout>, restore = true;
-    const poll = async () => {
-      const s = sessionRef.current; if (!s || cancelled || leaving.current) return;
-      const r = roomRef.current, p = runner.current, start = Date.now(); let retrySoon = false;
-      const state = !restore && r?.phase === "racing" ? { x: p.x, y: p.y, vx: p.vx, vy: p.vy, checkpoint: p.checkpoint, deaths: p.deaths, dead: !!p.deadUntil, finished: p.finished, at: start + clockOffset.current, seq: seq.current++ } : undefined;
-      try {
-        const res = await request({ action: "sync", code: s.code, token: s.token, round: r?.round, state });
-        if (cancelled || leaving.current) return;
-        const end = Date.now(), estimate = res.room.serverNow - (start + end) / 2;
-        const rtt = end - start; setPingMs(current => current ? Math.round(current * .65 + rtt * .35) : rtt);
-        clockOffset.current = restore ? estimate : clockOffset.current * .85 + estimate * .15;
-        acceptRoom(res.room, restore); restore = false;
-      } catch (e) {
-        if (cancelled) return;
-        setConnected(false); setBusy(false);
-        if (e instanceof ApiError && [401, 404].includes(e.status)) {
-          setError(e.message); sessionRef.current = null; roomRef.current = null; setSession(null); setRoom(null); setScreen("home");
-          try { sessionStorage.removeItem("rage-session"); } catch {} return;
+    let closed = false, reconnect: ReturnType<typeof setTimeout>, restore = true, delay = 300;
+    if (!ROOM_WS_BASE) {
+      let pollTimer: ReturnType<typeof setTimeout>;
+      const poll = async () => {
+        if (closed || leaving.current) return;
+        const started = Date.now(), r = roomRef.current, p = runner.current;
+        try {
+          const result = await request({ action: "sync", ...session, ...(r?.phase === "racing" ? { round: r.round, state: { x: p.x, y: p.y, vx: p.vx, vy: p.vy, checkpoint: p.checkpoint, deaths: p.deaths, dead: !!p.deadUntil, finished: p.finished, seq: seq.current++ } } : {}) });
+          if (closed) return;
+          setPingMs(current => current ? Math.round(current * .72 + (Date.now() - started) * .28) : Date.now() - started);
+          acceptRoom(result.room, restore); restore = false; setConnected(true);
+        } catch { if (!closed) setConnected(false); }
+        if (!closed) pollTimer = setTimeout(poll, 50);
+      };
+      void poll();
+      return () => { closed = true; clearTimeout(pollTimer); };
+    }
+    const pingTimes = new Map<number, number>();
+    const connect = () => {
+      if (closed || leaving.current) return;
+      const ws = new WebSocket(`${ROOM_WS_BASE}/${encodeURIComponent(session.code)}`);
+      socket.current = ws;
+      ws.onopen = () => { delay = 300; restore = true; ws.send(JSON.stringify({ type: "auth", token: session.token })); };
+      ws.onmessage = event => {
+        let message: { type?: string; room?: Room; id?: number; serverNow?: number };
+        try { message = JSON.parse(event.data as string); } catch { return; }
+        if (message.type === "ping" && message.id !== undefined) {
+          const id = message.id, received = Date.now(); pingTimes.set(id, received);
+          while (pingTimes.size > 10) pingTimes.delete(pingTimes.keys().next().value!);
+          ws.send(JSON.stringify({ type: "pong", id }));
+        } else if (message.type === "pong" && message.id !== undefined) {
+          const sentAt = pingTimes.get(message.id), receivedAt = Date.now();
+          if (sentAt !== undefined) {
+            const rtt = receivedAt - sentAt; setPingMs(current => current ? Math.round(current * .72 + rtt * .28) : rtt);
+            if (message.serverNow !== undefined) clockOffset.current = clockOffset.current * .75 + (message.serverNow - (sentAt + receivedAt) / 2) * .25;
+            pingTimes.delete(message.id);
+          }
+        } else if (message.type === "room" && message.room) {
+          lastGood.current = Date.now(); acceptRoom(message.room, restore); restore = false; setConnected(true);
         }
-        if (e instanceof ApiError && e.status === 409) {
-          if (/checkpoint mismatch|room state changed/i.test(e.message)) restore = true;
-          else retrySoon = true;
+      };
+      ws.onclose = event => {
+        if (closed) return;
+        if (event.code === 1008) {
+          setError(event.reason || "Your room session ended. Create or join again.");
+          sessionRef.current = null; roomRef.current = null; setSession(null); setRoom(null); setScreen("home");
+          try { sessionStorage.removeItem("rage-session"); } catch {}
+          return;
         }
-      }
-      if (!cancelled) {
-        const cadence = !document.hidden && roomRef.current?.phase === "racing" ? 115 : 650;
-        timer = setTimeout(poll, retrySoon ? 35 + Math.random() * 35 : Math.max(0, cadence - (Date.now() - start)));
-      }
-    }; void poll(); return () => { cancelled = true; clearTimeout(timer); };
+        setConnected(false); lastGood.current = 0; restore = true; reconnect = setTimeout(connect, delay); delay = Math.min(4000, delay * 1.7);
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => { closed = true; clearTimeout(reconnect); if (socket.current) { socket.current.onclose = null; socket.current.close(); socket.current = null; } };
   }, [session?.token, acceptRoom]);
 
   useEffect(() => {
+    if (!session) return;
+    const sendState = () => {
+      const ws = socket.current, r = roomRef.current, p = runner.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN || r?.phase !== "racing") return;
+      ws.send(JSON.stringify({ type: "state", round: r.round, state: { x: p.x, y: p.y, vx: p.vx, vy: p.vy, checkpoint: p.checkpoint, deaths: p.deaths, dead: !!p.deadUntil, finished: p.finished, seq: seq.current++ } }));
+    };
+    const timer = setInterval(sendState, 40);
+    return () => clearInterval(timer);
+  }, [session?.token]);
+
+  useEffect(() => {
     if (screen !== "race") return;
+    const checkFullscreen = () => setFullscreenAvailable(Boolean(document.fullscreenEnabled && gameShell.current && "requestFullscreen" in gameShell.current));
+    const resize = () => { if (canvas.current) resizeCanvas(canvas.current); checkFullscreen(); };
+    checkFullscreen();
+    document.addEventListener("fullscreenchange", checkFullscreen);
+    window.addEventListener("resize", resize);
+    window.addEventListener("orientationchange", resize);
+    const resizeObserver = canvas.current ? new ResizeObserver(resize) : null;
+    if (canvas.current) resizeObserver?.observe(canvas.current);
     canvas.current?.focus(); let id = 0, last = 0, accumulator = 0, hudAt = 0, camera = Math.max(0, runner.current.x - 180);
-    const peerVisual = new Map<number, Player>();
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const key = (e: KeyboardEvent, down: boolean) => {
       if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName) || helpRef.current) return;
@@ -132,32 +182,24 @@ export default function GameApp() {
       const elapsed = (Date.now() + (s ? clockOffset.current : 0) - (s ? r?.startAt || Date.now() : practiceStart.current)) / 1000;
       const online = !s || Date.now() - lastGood.current < 2500;
       if (elapsed >= 0 && online) {
-        accumulator += dt;
-        while (accumulator >= 1 / 120) {
-          const events = step(p, input.current, 1 / 120, elapsed); input.current.retry = false;
+          accumulator += dt;
+        while (accumulator >= 1 / 60) {
+          const events = step(p, input.current, 1 / 60, elapsed); input.current.retry = false;
           for (const event of events) { sound.current?.play(event); if (event === "checkpoint") showToast("CHECKPOINT SAVED · keep going"); }
-          accumulator -= 1 / 120;
+          accumulator -= 1 / 60;
         }
       } else accumulator = 0;
-      const peers = (r?.players || []).filter(q => q.slot !== s?.slot && !q.departed).map(targetPeer => {
-        const age = Math.min(.32, Math.max(0, (Date.now() + clockOffset.current - targetPeer.stateAt) / 1000));
-        const target = { ...targetPeer, x: Math.max(8, Math.min(WIDTH - PLAYER_H, targetPeer.x + targetPeer.vx * age)), y: Math.max(-100, Math.min(480, targetPeer.y + targetPeer.vy * age + 850 * age * age)) };
-        const old = peerVisual.get(targetPeer.slot);
-        if (!old || Math.abs(old.x - target.x) > 240) peerVisual.set(targetPeer.slot, target);
-        else { const amount = Math.min(1, dt * 38); peerVisual.set(targetPeer.slot, { ...target, x: old.x + (target.x - old.x) * amount, y: old.y + (target.y - old.y) * amount }); }
-        return peerVisual.get(targetPeer.slot)!;
-      });
-      for (const slot of peerVisual.keys()) if (!peers.some(peer => peer.slot === slot)) peerVisual.delete(slot);
+      const renderAt = Date.now() + clockOffset.current - INTERPOLATION_BUFFER_MS;
+      const peers = (r?.players || []).filter(q => q.slot !== s?.slot && !q.departed).map(q => interpolatePlayer(roomSamples.current, q.slot, renderAt) || q);
       if (canvas.current) {
-        const box = canvas.current.getBoundingClientRect(), viewWidth = box.width / Math.max(box.height, 1) * 540;
-        const target = Math.max(0, p.x - viewWidth * .31);
+        const target = Math.max(0, p.x - 960 * .31);
         camera = Math.abs(camera - target) > 900 || reduced ? target : camera + (target - camera) * Math.min(1, dt * 10);
         render(canvas.current, { p, peers, slot: s?.slot ?? 0, name: "YOU", time: Math.max(0, elapsed), camera, reduced });
       }
       if (timestamp - hudAt > 80) { setHud({ time: elapsed, deaths: p.deaths, checkpoint: p.checkpoint, x: p.x, finished: p.finished, dead: !!p.deadUntil, reason: p.deathReason }); setConnected(online); hudAt = timestamp; }
       id = requestAnimationFrame(loop);
     }; id = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(id); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); window.removeEventListener("blur", blur); document.removeEventListener("visibilitychange", blur); input.current = emptyInput(); };
+    return () => { cancelAnimationFrame(id); resizeObserver?.disconnect(); document.removeEventListener("fullscreenchange", checkFullscreen); window.removeEventListener("resize", resize); window.removeEventListener("orientationchange", resize); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); window.removeEventListener("blur", blur); document.removeEventListener("visibilitychange", blur); input.current = emptyInput(); };
   }, [screen, showToast]);
 
   async function enter(action: "create" | "join") {
@@ -201,7 +243,7 @@ export default function GameApp() {
   const winner = finishers[0], stage = Math.min(2, Math.floor(hud.x / 2400));
   const ownColor = COLORS[(session?.slot ?? 0) % COLORS.length];
 
-  return <main className={`app ${screen === "race" ? "in-race" : "home-screen"}`}>
+  return <main className={`app ${screen === "race" ? "in-race" : screen === "lobby" ? "lobby-screen" : "home-screen"}`}>
     <header className="site-header">
       <button className="brand" onClick={() => screen === "home" ? undefined : void leave()} aria-label="Rage Relay home"><span className="brand-icon"><Zap size={23} fill="currentColor" /></span><span>RAGE<span className="brand-light">RELAY</span><small>FRIENDSHIP STRESS TEST</small></span></button>
       <div className="header-actions"><span className="status-label"><i /> 2–4 PLAYERS. ZERO MERCY.</span><button className="icon-button" onClick={toggleSound} aria-label={muted ? "Turn sound on" : "Mute sound"}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button><button className="help-button" onClick={() => setHelp(true)}><HelpCircle size={17} /><span>How to play</span></button></div>
@@ -236,9 +278,10 @@ export default function GameApp() {
     </section>}
 
     {screen === "race" && <section className="race-layout" ref={gameShell}>
-      <div className="race-topline"><div className="course-title"><span style={{ color: CHAPTERS[stage].color }}>MAP {String(room ? Math.min(10, room.round) : runner.current.levelId + 1).padStart(2, "0")}/10</span><div><small>{session ? `ROOM ${session.code}` : "SOLO PRACTICE"}</small><h2>{LEVELS[Math.min(9, room?.levelId ?? runner.current.levelId)]!.name} · {CHAPTERS[stage].name}</h2></div></div><div className="race-tools"><span className={`connection ${connected ? "" : "offline"}`}><i />{session ? connected ? `LIVE · ${pingMs} MS` : "RECONNECTING" : "PRACTICE"}</span><button className="icon-button" aria-label="Fullscreen game" onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void gameShell.current?.requestFullscreen().catch(() => showToast("Fullscreen is unavailable in this browser.")); }}><Maximize2 size={17} /></button><button className="icon-button" aria-label="Leave race" onClick={() => void leave()}><LogOut size={17} /></button></div></div>
+      <div className="race-topline"><div className="course-title"><span style={{ color: CHAPTERS[stage].color }}>MAP {String(room ? Math.min(10, room.round) : runner.current.levelId + 1).padStart(2, "0")}/10</span><div><small>{session ? `ROOM ${session.code}` : "SOLO PRACTICE"}</small><h2>{LEVELS[Math.min(9, room?.levelId ?? runner.current.levelId)]!.name} · {CHAPTERS[stage].name}</h2></div></div><div className="race-tools"><span className={`connection ${connected ? "" : "offline"}`}><i />{session ? connected ? `${ROOM_WS_BASE ? "LIVE" : "POLL"} · ${pingMs} MS` : "RECONNECTING" : "PRACTICE"}</span>{fullscreenAvailable && <button className="icon-button" aria-label="Fullscreen game" title="Fullscreen" onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void gameShell.current?.requestFullscreen().catch(() => showToast("Fullscreen is unavailable in this browser.")); }}><Maximize2 size={17} /></button>}<button className="icon-button" aria-label="Leave race" onClick={() => void leave()}><LogOut size={17} /></button></div></div>
       <div className="race-progress"><div className="runner-row"><Avatar slot={session?.slot ?? 0} /><span>{me?.name || name || "You"}<small>YOU</small></span><div className="progress-track"><div style={{ width: `${Math.max(0, Math.min(100, hud.x / FINISH * 100))}%`, background: ownColor }} /></div><b style={{ color: ownColor }}>{Math.min(100, Math.floor(hud.x / FINISH * 100))}%</b></div>{others.map(other => <div className="runner-row" key={other.slot}><Avatar slot={other.slot} /><span>{other.name}<small>{room && room.serverNow - other.lastSeen > 8000 ? "OFFLINE" : "RIVAL"}</small></span><div className="progress-track"><div style={{ width: `${Math.min(100, other.x / FINISH * 100)}%`, background: COLORS[other.slot % COLORS.length] }} /></div><b style={{ color: COLORS[other.slot % COLORS.length] }}>{Math.min(100, Math.floor(other.x / FINISH * 100))}%</b></div>)}</div>
       <div className="game-stage"><canvas ref={canvas} tabIndex={0} aria-label="Trap platformer. Move with A and D or arrow keys. Hold Space or W to jump. R returns to your checkpoint." />
+        {session && <div className="sync-debug" aria-live="off"><b>SYNC DEBUG</b><span>RTT {pingMs} ms</span><span>SERVER 25 Hz</span><span>PHYSICS 60 Hz</span><span>BUFFER 125 ms</span><span>SNAP AGE {Math.max(0, Date.now() - lastSnapshotAt.current)} ms</span></div>}
         {hud.time < 0 && <div className="game-overlay countdown"><span>GET READY</span><b>{Math.max(1, Math.ceil(-hud.time))}</b><p>Finish the map, then vote to advance.</p></div>}
         {!connected && session && <div className="game-overlay reconnect"><Zap size={30} /><h2>Hold that jump.</h2><p>Reconnecting… your movement is paused.</p><button className="secondary" onClick={() => void leave()}>Return home</button></div>}
         {hud.dead && !hud.finished && connected && <div className="death-message"><Skull size={18} />{hud.reason}</div>}

@@ -26,6 +26,8 @@ const localBindingConfig = {
         },
       ]
     : [],
+  durable_objects: { bindings: [{ name: "ROOMS", class_name: "RoomDurableObject" }] },
+  migrations: [{ tag: "v1", new_sqlite_classes: ["RoomDurableObject"] }],
   r2_buckets: r2
     ? [
         {

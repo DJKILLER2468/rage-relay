@@ -3,6 +3,14 @@ import type { Runner } from "./engine";
 import type { Player } from "./protocol";
 export const COLORS = ["#ff5a4f", "#30e6ff", "#d05bff", "#d7ff48"];
 export type RenderOptions = { p: Runner; peers: Player[]; slot: number; name: string; time: number; camera: number; preview?: boolean; reduced?: boolean };
+export const LOGICAL_WIDTH = 960, LOGICAL_HEIGHT = 540;
+export function resizeCanvas(canvas: HTMLCanvasElement) {
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const dpr = window.devicePixelRatio || 1;
+  const pixelW = Math.round(rect.width * dpr), pixelH = Math.round(rect.height * dpr);
+  if (canvas.width !== pixelW || canvas.height !== pixelH) { canvas.width = pixelW; canvas.height = pixelH; }
+}
 function round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, color: string) { c.fillStyle = color; c.beginPath(); c.roundRect(x, y, w, h, r); c.fill(); }
 function text(c: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, font = "monospace", align: CanvasTextAlign = "left") { c.fillStyle = color; c.font = `700 ${size}px ${font}`; c.textAlign = align; c.fillText(s, x, y); }
 
@@ -25,10 +33,8 @@ export function drawCharacter(c: CanvasRenderingContext2D, x: number, y: number,
 export function render(canvas: HTMLCanvasElement, opts: RenderOptions) {
   const c = canvas.getContext("2d"); if (!c) return;
   const rect = canvas.getBoundingClientRect(); if (!rect.width || !rect.height) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const pixelW = Math.round(rect.width * dpr), pixelH = Math.round(rect.height * dpr);
-  if (canvas.width !== pixelW || canvas.height !== pixelH) { canvas.width = pixelW; canvas.height = pixelH; }
-  const vh = 540, vw = rect.width / rect.height * vh;
+  resizeCanvas(canvas);
+  const vh = LOGICAL_HEIGHT, vw = opts.preview ? rect.width / rect.height * vh : LOGICAL_WIDTH;
   c.setTransform(canvas.width / vw, 0, 0, canvas.height / vh, 0, 0);
   const { p, slot, name, time, preview, reduced } = opts;
   const peers = opts.peers.filter(peer => !peer.dead && !peer.departed);

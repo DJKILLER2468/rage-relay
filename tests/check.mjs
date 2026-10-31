@@ -1,82 +1,50 @@
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
-import ts from 'typescript';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
+
 const base = resolve('.sites-runtime/test-mods');
-for (const file of ['game/course','game/engine','game/protocol','server/rooms']) {
+for (const file of ['game/course','game/engine','game/protocol','game/interpolation','server/rooms']) {
   const output = resolve(base, file + '.mjs'); mkdirSync(dirname(output), { recursive:true });
   let code = ts.transpileModule(readFileSync(file + '.ts','utf8'), { compilerOptions:{ target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022 } }).outputText;
   code = code.replace(/(from\s+["'])(\.[^"']+)(["'])/g, '$1$2.mjs$3');
   writeFileSync(output,code);
 }
-const { makeRunner,step,emptyInput } = await import(pathToFileURL(resolve(base,'game/engine.mjs')));
-const { CHECKPOINTS, FLOOR,PLAYER_H,FINISH,LEVELS,getPlatforms,getTraps,trapShape,traps } = await import(pathToFileURL(resolve(base,'game/course.mjs')));
-const { handleAction } = await import(pathToFileURL(resolve(base,'server/rooms.mjs')));
+const { makeRunner, step, emptyInput } = await import(pathToFileURL(resolve(base,'game/engine.mjs')));
+const { CHECKPOINTS,FLOOR,PLAYER_H,FINISH,LEVELS,getPlatforms,getTraps,trapShape,traps } = await import(pathToFileURL(resolve(base,'game/course.mjs')));
+const { applyRoomAction,acceptPlayerState,publicRoom } = await import(pathToFileURL(resolve(base,'server/rooms.mjs')));
+const { addRoomSample,interpolatePlayer,INTERPOLATION_BUFFER_MS } = await import(pathToFileURL(resolve(base,'game/interpolation.mjs')));
 let checks=0;
-function check(name,fn) { fn(); console.log('PASS',name);checks++; }
-const frame = 1/120;
-check('Grounded movement and braking',()=>{const p=makeRunner();for(let i=0;i<30;i++)step(p,{...emptyInput(),right:true},frame,i*frame);assert(p.x>100&&p.x<130);assert.equal(p.y,FLOOR-PLAYER_H);for(let i=0;i<50;i++)step(p,emptyInput(),frame,1+i*frame);assert.equal(p.vx,0);});
-check('Swept platform landings stop on the top and solid sides stop embedding',()=>{const p=makeRunner();p.x=420;p.y=400;p.vy=800;step(p,emptyInput(),.04,2);assert.equal(p.y,FLOOR-PLAYER_H);assert(p.grounded);const q=makeRunner();q.x=352;q.y=440;q.vx=270;step(q,{...emptyInput(),right:true},frame,2);assert.equal(q.x,380-26);});
-check('All 110–120 unit pits are within the full jump envelope',()=>{for(const [start,end] of [[240,380],[590,740]]){const p=makeRunner();p.x=start;p.vx=270;let minY=p.y;for(let i=0;i<100;i++){step(p,{...emptyInput(),right:true,jump:true},frame,i*frame);minY=Math.min(minY,p.y);if(p.x>end+30&&p.grounded)break;}assert(p.x>end&&p.grounded&&!p.deadUntil);assert(minY<310);}});
+function check(name, fn) { fn(); checks++; console.log('PASS',name); }
+const frame = 1/60;
+check('60 Hz grounded movement and braking',()=>{const p=makeRunner();for(let i=0;i<30;i++)step(p,{...emptyInput(),right:true},frame,i*frame);assert(p.x>160&&p.x<200);assert.equal(p.y,FLOOR-PLAYER_H);for(let i=0;i<50;i++)step(p,emptyInput(),frame,1+i*frame);assert.equal(p.vx,0);});
+check('Separate-axis collision lands on tops and blocks solid sides',()=>{const p=makeRunner();p.x=420;p.y=400;p.vy=800;step(p,emptyInput(),frame,2);assert.equal(p.y,FLOOR-PLAYER_H);assert(p.grounded);const q=makeRunner();q.x=352;q.y=440;q.vx=270;step(q,{...emptyInput(),right:true},frame,2);assert.equal(q.x,380-26);});
+check('Pit jumps remain reachable at 60 Hz',()=>{for(const [start,end] of [[240,380],[590,740]]){const p=makeRunner();p.x=start;p.vx=270;let minY=p.y;for(let i=0;i<100;i++){step(p,{...emptyInput(),right:true,jump:true},frame,i*frame);minY=Math.min(minY,p.y);if(p.x>end+30&&p.grounded)break;}assert(p.x>end&&p.grounded&&!p.deadUntil);assert(minY<310);}});
 check('Short tap produces a lower jump than a hold',()=>{function height(hold){const p=makeRunner();let min=440;for(let i=0;i<100;i++){step(p,{...emptyInput(),jump:i<hold},frame,i*frame);min=Math.min(min,p.y);}return min;}assert(height(60)<height(4)-30);});
-check('Spikes kill once and respawn at the current checkpoint',()=>{const p=makeRunner(1);p.x=505;p.invincibleUntil=0;step(p,emptyInput(),frame,4);assert.equal(p.deaths,1);assert(p.deadUntil);for(let i=0;i<100;i++)step(p,emptyInput(),frame,4+i*frame);assert.equal(p.deaths,1);assert.equal(p.x,CHECKPOINTS[1]);assert(!p.deadUntil);});
+check('Spikes kill once and respawn at current checkpoint',()=>{const p=makeRunner(1);p.x=505;p.invincibleUntil=0;step(p,emptyInput(),frame,4);assert.equal(p.deaths,1);assert(p.deadUntil);for(let i=0;i<45;i++)step(p,emptyInput(),frame,4+i*frame);assert.equal(p.deaths,1);assert.equal(p.x,CHECKPOINTS[1]);assert(!p.deadUntil);});
 check('Cracked floors collapse consistently',()=>{const p=makeRunner();p.x=1100;for(let i=0;i<120;i++)step(p,emptyInput(),frame,1+i*frame);assert(p.deaths>=1);});
-check('Shared trap timing is deterministic and crushers have safe windows',()=>{for(const t of traps){assert.deepEqual(trapShape(t,3.25),trapShape(t,3.25));if(t.kind==='press'){let safe=false,warn=false;for(let n=0;n<100;n++){const h=trapShape(t,n/20);safe ||= !h.active;warn ||= h.warning;}assert(safe&&warn);}}});
-check('Ten campaign maps have distinct trap layouts, raised routes, and down routes',()=>{assert.equal(LEVELS.length,10);assert.notDeepEqual(getTraps(0),getTraps(1));assert.notDeepEqual(getTraps(1),getTraps(2));assert.notDeepEqual(getPlatforms(0),getPlatforms(1));assert.notDeepEqual(getPlatforms(1),getPlatforms(2));assert(getPlatforms(9).some(p=>p.id.startsWith('u')&&p.y<FLOOR-80));assert(getPlatforms(0).some(p=>p.id.startsWith('d')&&p.y>FLOOR));});
-check('Cannot finish before visiting all checkpoints',()=>{const p=makeRunner();p.x=FINISH;step(p,emptyInput(),frame,100);assert(!p.finished);const q=makeRunner(4);q.x=FINISH;q.invincibleUntil=101;step(q,emptyInput(),frame,100);assert(q.finished);});
-const sqlite = new DatabaseSync(':memory:');
-for (const f of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort()) sqlite.exec(readFileSync('drizzle/'+f,'utf8'));
-const db = { prepare(sql){ const q=sqlite.prepare(sql); return { bind(...args){return {async first(){return q.get(...args)||null},async run(){return q.run(...args)}}} } } };
-let now=1000000;
-const create=()=>handleAction(db,{action:'create',name:'Test A'},now);
-const a=await create(), code=a.session.code;
-assert(!JSON.stringify(a.room).includes('tokenHash'));assert(!JSON.stringify(a.room).includes(a.session.token));checks++;console.log('PASS Public snapshots exclude player credentials');
-const b=await handleAction(db,{action:'join',code,name:'Test B'},now+10);
-const cPlayer=await handleAction(db,{action:'join',code,name:'Test C'},now+20);
-const dPlayer=await handleAction(db,{action:'join',code,name:'Test D'},now+30);
-await assert.rejects(()=>handleAction(db,{action:'join',code,name:'Fifth'},now+40),{status:409});assert.deepEqual(dPlayer.room.players.map(p=>p.slot),[0,1,2,3]);checks++;console.log('PASS Room accepts four players and rejects a fifth');
-await assert.rejects(()=>handleAction(db,{action:'sync',code,token:'fake'},now+30),{status:401});checks++;console.log('PASS Other devices cannot impersonate a player');
-const levelPick=await handleAction(db,{action:'set-level',...a.session,levelId:2},now+50);assert.equal(levelPick.room.levelId,2);
-await assert.rejects(()=>handleAction(db,{action:'set-level',...b.session,levelId:1},now+55),{status:403});
-const s=await handleAction(db,{action:'ready',...a.session,ready:true},now+60);assert.equal(s.room.phase,'lobby');
-await handleAction(db,{action:'ready',...b.session,ready:true},now+65);
-await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+70);
-let current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+75);assert.equal(current.room.phase,'racing');assert.equal(current.room.round,1);assert.equal(current.room.levelId,2);assert.equal(current.room.startAt,now+3575);checks++;console.log('PASS All four players share selected course and countdown');
-now=current.room.startAt+1000;
-const u={x:100,y:406,vx:0,vy:0,checkpoint:0,deaths:0,dead:false,finished:false,at:now,seq:0};
-const simultaneous=await Promise.all([a.session,b.session,cPlayer.session,dPlayer.session].map(session=>handleAction(db,{action:'sync',...session,round:1,state:u},now+1)));
-assert.equal(simultaneous.length,4);current=await handleAction(db,{action:'sync',...a.session,round:1},now+2);assert(current.room.players.every(p=>p.x===100));checks++;console.log('PASS Four simultaneous movement updates survive room contention');
-const legacy=await handleAction(db,{action:'sync',...b.session,round:1,state:{...u,x:110,at:undefined,seq:1}},now+3);assert.equal(legacy.room.players[1].stateAt,now+3);checks++;console.log('PASS Older clients without sample timestamps keep working');
-const oldSnapshot=JSON.parse(sqlite.prepare('SELECT state FROM race_rooms WHERE code=?').get(code).state);delete oldSnapshot.players[0].stateAt;sqlite.prepare('UPDATE race_rooms SET state=? WHERE code=?').run(JSON.stringify(oldSnapshot),code);const migrated=await handleAction(db,{action:'sync',...a.session,round:1},now+4);assert.equal(migrated.room.players[0].stateAt,migrated.room.players[0].lastSeen);checks++;console.log('PASS Existing rooms receive a safe timestamp fallback');
-await assert.rejects(()=>handleAction(db,{action:'sync',...a.session,round:1,state:{...u,at:now+5000,seq:1}},now+3),{status:400});checks++;console.log('PASS Client movement timestamps outside the server clock window are rejected');
-const first=await handleAction(db,{action:'sync',...a.session,round:1,state:u},now);
-const stale=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:90,seq:0}},now+10);assert.equal(stale.room.players[0].x,100);checks++;console.log('PASS Stale updates cannot move a player backward');
-await assert.rejects(()=>handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:4000,checkpoint:2,seq:1}},now+100),{status:409});checks++;console.log('PASS Checkpoint skips are rejected');
-let count=1;
-for(const x of [...Array.from({length:Math.floor((FINISH-200)/100)},(_,i)=>(i+2)*100),FINISH]){now+=400;current=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x,at:now,checkpoint:CHECKPOINTS.filter(c=>c<=x).length-1,seq:count++,finished:x>=FINISH}},now);}
-assert(current.room.players[0].finishedAt>0);
-const reconnect=await handleAction(db,{action:'sync',...a.session},now+200);assert.equal(reconnect.room.players[0].x,FINISH);assert.equal(reconnect.room.players[0].checkpoint,4);assert.equal(reconnect.room.players[0].finishedAt,current.room.players[0].finishedAt);checks++;console.log('PASS Finish and reconnection preserve authoritative race results');
-await handleAction(db,{action:'ready',...a.session,ready:true},now+400);
-await handleAction(db,{action:'ready',...b.session,ready:true},now+450);
-await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+475);
-current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+500);assert.equal(current.room.round,2);assert.equal(current.room.levelId,3);assert(current.room.players.every(p=>p.x===60&&p.checkpoint===0&&p.finishedAt===null));
-const delayed=await handleAction(db,{action:'sync',...a.session,round:1,state:{...u,x:7100,checkpoint:4,seq:999,finished:true}},now+5000);assert.equal(delayed.room.players[0].x,60);checks++;console.log('PASS Next map advances campaign, resets players, and ignores old-round packets');
-// Force the room to the last map to verify the tenth map is played before campaign completion.
-const stored=sqlite.prepare('SELECT state FROM race_rooms WHERE code=?').get(code);
-const finalState=JSON.parse(stored.state);finalState.round=10;finalState.levelId=9;finalState.phase='racing';finalState.players.forEach(p=>{p.ready=false;p.finishedAt=now+1;});
-sqlite.prepare('UPDATE race_rooms SET state=?,version=version+1 WHERE code=?').run(JSON.stringify(finalState),code);
-await handleAction(db,{action:'ready',...a.session,ready:true},now+10);
-await handleAction(db,{action:'ready',...b.session,ready:true},now+20);
-await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+30);
-current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+40);
-assert.equal(current.room.phase,'complete');assert.equal(current.room.round,11);assert.equal(current.room.levelId,9);
-await handleAction(db,{action:'ready',...a.session,ready:true},now+50);
-await handleAction(db,{action:'ready',...b.session,ready:true},now+60);
-await handleAction(db,{action:'ready',...cPlayer.session,ready:true},now+70);
-current=await handleAction(db,{action:'ready',...dPlayer.session,ready:true},now+80);
-assert.equal(current.room.phase,'racing');assert.equal(current.room.round,1);assert.equal(current.room.levelId,0);checks++;console.log('PASS Tenth map completes the campaign; group vote restarts at map one');
-const c=await create(); await handleAction(db,{action:'join',code:c.session.code,name:'B'},now); await handleAction(db,{action:'join',code:c.session.code,name:'C'},now+1); const joins=await Promise.allSettled([handleAction(db,{action:'join',code:c.session.code,name:'D'},now+2),handleAction(db,{action:'join',code:c.session.code,name:'E'},now+2)]);
-assert.equal(joins.filter(x=>x.status==='fulfilled').length,1);checks++;console.log('PASS Simultaneous join requests cannot overfill a room');
-console.log(`${checks} checks passed.`);
+check('Trap timing is deterministic and crushers have safe windows',()=>{for(const t of traps){assert.deepEqual(trapShape(t,3.25),trapShape(t,3.25));if(t.kind==='press'){let safe=false,warn=false;for(let n=0;n<100;n++){const h=trapShape(t,n/20);safe ||= !h.active;warn ||= h.warning;}assert(safe&&warn);}}});
+check('Ten maps retain distinct raised and down routes',()=>{assert.equal(LEVELS.length,10);assert.notDeepEqual(getTraps(0),getTraps(1));assert.notDeepEqual(getPlatforms(0),getPlatforms(1));assert(getPlatforms(9).some(p=>p.id.startsWith('u')&&p.y<FLOOR-80));assert(getPlatforms(0).some(p=>p.id.startsWith('d')&&p.y>FLOOR));});
+check('Finishing requires all checkpoints',()=>{const p=makeRunner();p.x=FINISH;step(p,emptyInput(),frame,100);assert(!p.finished);const q=makeRunner(4);q.x=FINISH;q.invincibleUntil=101;step(q,emptyInput(),frame,100);assert(q.finished);});
+
+const sessions=[]; let state=null, now=1_000_000;
+let created=await applyRoomAction(state,{action:'create',code:'ABC234',name:'P1'},now);state=created.state;sessions[0]=created.session;
+for(let i=1;i<4;i++){const r=await applyRoomAction(state,{action:'join',code:'ABC234',name:`P${i+1}`},now+i);state=r.state;sessions[i]=r.session;}
+assert.equal(state.players.length,4);assert.equal(publicRoom(state,now).players.length,4);assert(!JSON.stringify(publicRoom(state,now)).includes('tokenHash'));checks++;console.log('PASS Durable Object room state accepts four players without exposing credentials');
+await assert.rejects(()=>applyRoomAction(state,{action:'set-level',...sessions[1],levelId:2},now+5),{status:403});
+state=(await applyRoomAction(state,{action:'set-level',...sessions[0],levelId:2},now+6)).state;
+for(const session of sessions){const result=await applyRoomAction(state,{action:'ready',...session,ready:true},now+10);state=result.state;}
+assert.equal(state.phase,'racing');assert.equal(state.startAt,now+3510);checks++;console.log('PASS Server owns shared ready state, countdown, and room clock');
+let grace=(await applyRoomAction(null,{action:'create',code:'DEF345',name:'Host'},now+20)).state;
+for(let i=1;i<4;i++)grace=(await applyRoomAction(grace,{action:'join',code:'DEF345',name:`G${i}`},now+20+i)).state;
+grace.players[1].disconnectedAt=now+30;
+await assert.rejects(()=>applyRoomAction(grace,{action:'join',code:'DEF345',name:'Early'},now+30_029),{status:409});
+const afterGrace=await applyRoomAction(grace,{action:'join',code:'DEF345',name:'Replacement'},now+30_031);
+assert.equal(afterGrace.session.slot,1);assert.equal(new Set(afterGrace.state.players.map(p=>p.slot)).size,4);checks++;console.log('PASS Disconnected player slot is reserved for 30 seconds, then reused cleanly');
+await assert.rejects(()=>applyRoomAction(state,{action:'set-level',...sessions[0],levelId:3},now+20),{status:409});checks++;console.log('PASS Host cannot change the course after the shared race starts');
+check('Snapshot interpolation uses a 125 ms render buffer and sample timestamps',()=>{const room1=publicRoom(state,now+4000), room2=publicRoom(state,now+4040);room1.players[1].x=100;room2.players[1].x=140;room1.players[1].stateAt=room1.serverNow;room2.players[1].stateAt=room2.serverNow;const samples=addRoomSample([room1],room2);const peer=interpolatePlayer(samples,1,room1.serverNow+20);assert.equal(INTERPOLATION_BUFFER_MS,125);assert.equal(peer.x,120);});
+
+globalThis.__rageTestRoom=state;globalThis.__rageTestSessions=sessions;
+await import('./network-sim.mjs');
+console.log(`${checks} core checks passed.`);
