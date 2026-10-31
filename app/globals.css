@@ -59,6 +59,7 @@ html:has(.in-race), body:has(.in-race){width:100%;height:100%;margin:0;overflow:
 @media(pointer:coarse){.in-race .touch-controls{display:flex}}
 @media(max-width:600px){.in-race .race-progress .runner-row{min-width:0;flex-basis:100%;max-width:none}.in-race .race-progress{top:calc(max(58px,env(safe-area-inset-top) + 49px));gap:3px}.in-race .runner-row .avatar{display:none}.in-race .runner-row>span{font-size:9px}.in-race .game-bottom{bottom:calc(env(safe-area-inset-bottom) + 75px)}.in-race .game-stats{gap:9px}.in-race .game-stats>span{font-size:8px}}
 @media(max-height:420px) and (orientation:landscape){.in-race .race-progress{top:calc(env(safe-area-inset-top) + 48px);right:auto;width:min(45vw,500px)}.in-race .race-progress .runner-row{min-width:120px;flex-basis:46%}.in-race .game-bottom{bottom:calc(env(safe-area-inset-bottom) + 64px);left:auto;min-width:230px}.in-race .touch-controls{left:12px;right:12px}}
+.home-screen{overflow:visible}
 .home-screen .brand{letter-spacing:-.045em}
 .home-screen .hero-art:after{content:"";position:absolute;z-index:0;inset:7% 2% 19% 9%;border:1px solid #42dfff27;border-radius:45%;transform:rotate(-11deg);box-shadow:0 0 80px #2784ff17,inset 0 0 90px #2dd4ff0a;pointer-events:none}
 .home-screen .hero-tags{z-index:1}

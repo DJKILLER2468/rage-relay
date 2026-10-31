@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const base = resolve('.sites-runtime/test-mods');
-for (const file of ['game/course','game/engine','game/protocol','game/interpolation','server/rooms']) {
+for (const file of ['game/course','game/engine','game/protocol','game/interpolation','server/rooms','server/polling-rooms']) {
   const output = resolve(base, file + '.mjs'); mkdirSync(dirname(output), { recursive:true });
   let code = ts.transpileModule(readFileSync(file + '.ts','utf8'), { compilerOptions:{ target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022 } }).outputText;
   code = code.replace(/(from\s+["'])(\.[^"']+)(["'])/g, '$1$2.mjs$3');
@@ -14,6 +14,7 @@ for (const file of ['game/course','game/engine','game/protocol','game/interpolat
 const { makeRunner, step, emptyInput } = await import(pathToFileURL(resolve(base,'game/engine.mjs')));
 const { CHECKPOINTS,FLOOR,PLAYER_H,FINISH,LEVELS,getPlatforms,getTraps,trapShape,traps } = await import(pathToFileURL(resolve(base,'game/course.mjs')));
 const { applyRoomAction,acceptPlayerState,publicRoom } = await import(pathToFileURL(resolve(base,'server/rooms.mjs')));
+const { handlePollingAction } = await import(pathToFileURL(resolve(base,'server/polling-rooms.mjs')));
 const { addRoomSample,interpolatePlayer,INTERPOLATION_BUFFER_MS } = await import(pathToFileURL(resolve(base,'game/interpolation.mjs')));
 let checks=0;
 function check(name, fn) { fn(); checks++; console.log('PASS',name); }
@@ -44,6 +45,11 @@ const afterGrace=await applyRoomAction(grace,{action:'join',code:'DEF345',name:'
 assert.equal(afterGrace.session.slot,1);assert.equal(new Set(afterGrace.state.players.map(p=>p.slot)).size,4);checks++;console.log('PASS Disconnected player slot is reserved for 30 seconds, then reused cleanly');
 await assert.rejects(()=>applyRoomAction(state,{action:'set-level',...sessions[0],levelId:3},now+20),{status:409});checks++;console.log('PASS Host cannot change the course after the shared race starts');
 check('Snapshot interpolation uses a 125 ms render buffer and sample timestamps',()=>{const room1=publicRoom(state,now+4000), room2=publicRoom(state,now+4040);room1.players[1].x=100;room2.players[1].x=140;room1.players[1].stateAt=room1.serverNow;room2.players[1].stateAt=room2.serverNow;const samples=addRoomSample([room1],room2);const peer=interpolatePlayer(samples,1,room1.serverNow+20);assert.equal(INTERPOLATION_BUFFER_MS,125);assert.equal(peer.x,120);});
+const pollingRows=new Map();
+const pollingDb={prepare(sql){let values=[];return{bind(...args){values=args;return this;},async run(){return{};},async first(){if(sql.startsWith('INSERT')){const[code,state,expires_at]=values;if(pollingRows.has(code))return null;pollingRows.set(code,{state,version:0,expires_at});return{code};}if(sql.startsWith('SELECT'))return pollingRows.get(values[0])||null;if(sql.startsWith('UPDATE')){const[state,expires_at,code,version]=values;const row=pollingRows.get(code);if(!row||row.version!==version)return null;pollingRows.set(code,{state,expires_at,version:version+1});return{version:version+1};}return null;}};}};
+let pollResult=await handlePollingAction(pollingDb,{action:'create',name:'Poll host'},now+40);const pollSession=pollResult.session;
+pollResult=await handlePollingAction(pollingDb,{action:'sync',...pollSession},now+41);
+assert.equal(pollResult.room.players.length,1);assert(!JSON.stringify(pollResult).includes('tokenHash'));checks++;console.log('PASS HTTP polling fallback stores and returns room snapshots through D1');
 
 globalThis.__rageTestRoom=state;globalThis.__rageTestSessions=sessions;
 await import('./network-sim.mjs');

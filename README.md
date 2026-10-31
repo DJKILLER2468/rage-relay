@@ -2,7 +2,7 @@
 
 Online trap-platformer race. Two to four players join with a six-character room code, ready up, and race through a ten-map campaign. No accounts or downloads are required. Includes solo practice, keyboard/touch controls, four checkpoints, unlimited retries, next-map votes, and same-tab reconnection.
 
-**Live game:** https://rage-relay-yuvraj.arcanecamel7.chatgpt.site
+**Live game:** https://rage-relay-yuvraj.yuvrajsinha6789.chatgpt.site
 
 ## Rules
 
@@ -13,7 +13,7 @@ A finish records a player’s result, but does not end the session. After the fi
 - The browser runs the canvas game with a fixed 960 × 540 logical view, scaled to fit the screen with letterboxing. Physics advances at 60 Hz. Home and lobby pages remain ordinary scrolling pages; the race uses a full-viewport `100dvh` layout.
 - `worker/src/index.ts` is a standalone Cloudflare Worker entry point. It accepts room control requests at `POST /api/rooms` and upgrades `GET /ws/:roomCode` to a Durable Object WebSocket.
 - Each room is serialized by one SQLite-backed Durable Object. It owns the room clock, trap phase, ready and campaign votes, and player state. The object broadcasts complete room snapshots at 25 Hz. Player tokens are hashed in persistent room storage and omitted from snapshots.
-- WebSocket clients send movement at 25 Hz. Remote runners render from a 125 ms interpolation buffer. The HUD reports RTT and provides a sync-debug overlay. If `NEXT_PUBLIC_ROOM_WS_BASE_URL` is unset, the browser falls back to HTTP room polling at 20 Hz through `/api/rooms`.
+- WebSocket clients send movement at 25 Hz. Remote runners render from a 125 ms interpolation buffer. The HUD reports RTT and provides a sync-debug overlay. If `NEXT_PUBLIC_ROOM_WS_BASE_URL` is unset, the browser falls back to HTTP room polling at 20 Hz through `/api/rooms`, backed by the existing D1 table on Sites.
 - The Worker requires an exact, configured `Origin` allowlist for both WebSocket and HTTP requests. Disconnected player slots remain reserved for 30 seconds so a reconnect can reclaim the same slot.
 - Client-side movement prediction keeps controls immediate; physics and finish claims are not fully replayed on the server, so the game remains casual rather than tournament-grade. Rooms expire after four hours of inactivity. `sessionStorage` preserves the player session for same-tab refresh; invite links contain only the room code.
 
@@ -40,7 +40,8 @@ Wrangler provisions the `ROOMS` binding and its `new_sqlite_classes` migration o
 - `app/game-app.tsx`: lobby, gameplay, networking, touch controls.
 - `worker/wrangler.toml` and `worker/src/index.ts`: standalone Worker configuration, Origin enforcement, HTTP control routing, and `/ws/:roomCode` Durable Object routing.
 - `server/rooms.ts`: Durable Object room clock, actions, player authentication, broadcasts, and the 30-second reconnect grace period.
-- `app/api/rooms/route.ts`: same-origin route used by the frontend fallback and Sites runtime.
+- `server/polling-rooms.ts`: D1 compare-and-swap handler used by the HTTP polling fallback.
+- `app/api/rooms/route.ts`: same-origin route for Sites Durable Objects or the D1 fallback.
 - `app/game-app.tsx`: client transport selection, polling fallback, RTT display, fullscreen handling, and touch controls.
 
 ## Verification

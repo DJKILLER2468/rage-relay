@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { GameError, newRoomCode } from "../../../server/rooms";
+import { handlePollingAction } from "../../../server/polling-rooms";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
@@ -24,7 +25,10 @@ export async function POST(request: Request) {
     if (raw.length > 4096) return Response.json({ error: "Request too large." }, { status: 413, headers });
     const input = JSON.parse(raw);
     if (!input || typeof input !== "object" || Array.isArray(input)) throw new GameError("Invalid request.");
-    if (!env.ROOMS) return Response.json({ error: "Rooms are temporarily unavailable. You can still play solo practice." }, { status: 503, headers });
+    if (!env.ROOMS) {
+      if (env.DB) return Response.json(await handlePollingAction(env.DB, input), { headers });
+      return Response.json({ error: "Rooms are temporarily unavailable. You can still play solo practice." }, { status: 503, headers });
+    }
     let code = typeof input.code === "string" ? input.code.toUpperCase().trim() : "";
     if (input.action === "create") code = newRoomCode();
     if (!/^[A-Z2-9]{6}$/.test(code)) throw new GameError("Enter the six-character room code.");
